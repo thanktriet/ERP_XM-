@@ -19,6 +19,13 @@ const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
 });
 
+/** GitHub Pages: app nằm dưới /<tên-repo>/ — basename khớp Vite `base` */
+function routerBasename(): string | undefined {
+  const b = import.meta.env.BASE_URL;
+  if (b === '/') return undefined;
+  return b.endsWith('/') ? b.slice(0, -1) : b;
+}
+
 // Guard: kiểm tra đăng nhập — chờ init() xong rồi mới quyết định redirect
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { token, isInitialized } = useAuthStore();
@@ -33,7 +40,7 @@ export default function App() {
 
   return (
     <QueryClientProvider client={qc}>
-      <BrowserRouter>
+      <BrowserRouter basename={routerBasename()}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>

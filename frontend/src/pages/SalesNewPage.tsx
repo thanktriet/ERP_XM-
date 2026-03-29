@@ -79,7 +79,7 @@ export default function SalesNewPage() {
   const [mauChon, setMauChon]                 = useState('');
   const [phienBanChon, setPhienBanChon]       = useState('');    // ten của variant
   const [vehicleChon, setVehicleChon]         = useState<InventoryVehicle | null>(null);
-  const [showVINDrop, setShowVINDrop]         = useState(false);
+  const [, setShowVINDrop]                     = useState(false);
 
   // ── Bước 3: Thanh toán ───────────────────────────────────────────────────
   const [hinhThuc, setHinhThuc]               = useState<'tra_thang' | 'tra_gop'>('tra_thang');

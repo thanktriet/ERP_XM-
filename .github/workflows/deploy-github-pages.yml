@@ -1,0 +1,45 @@
+# Triển khai frontend tĩnh lên GitHub Pages (URL: https://<user>.github.io/ERP_XM-/)
+# Cài đặt repo: Settings → Pages → Build: GitHub Actions
+name: Deploy frontend to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-erp-xm
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Cài đặt và build (base /ERP_XM-/)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build:gh-pages
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: frontend/dist
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

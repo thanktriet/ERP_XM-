@@ -1,4 +1,5 @@
 // Dashboard - Trang tổng quan
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import type { DashboardStats } from '../types';
@@ -57,12 +58,12 @@ export default function DashboardPage() {
                 { href: '/services', label: '🔧 Tạo phiếu dịch vụ', color: '#d97706' },
                 { href: '/finance', label: '💸 Ghi nhận thu/chi', color: '#7c3aed' },
               ].map(a => (
-                <a
-                  key={a.href} href={a.href}
+                <Link
+                  key={a.href} to={a.href}
                   style={{ padding: '10px 14px', background: '#f9fafb', borderRadius: 6, textDecoration: 'none', color: a.color, fontWeight: 500, fontSize: 13.5, border: '1px solid #e5e7eb', display: 'block' }}
                 >
                   {a.label}
-                </a>
+                </Link>
               ))}
             </div>
           </div>

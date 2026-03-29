@@ -1,8 +1,15 @@
 // Axios instance với base URL và interceptor tự động gắn token
 import axios from 'axios';
 
+/** Redirect login có tiền tố BASE_URL (bắt buộc khi deploy GitHub Pages dưới /repo/) */
+function redirectToLoginPage() {
+  const b = import.meta.env.BASE_URL;
+  window.location.href = b.endsWith('/') ? `${b}login` : `${b}/login`;
+}
+
 const api = axios.create({
-  baseURL: '/api',
+  // GitHub Pages: build kèm VITE_API_BASE_URL=https://api-cua-ban.com (có /api nếu backend mount tại đó)
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });
@@ -48,7 +55,7 @@ api.interceptors.response.use(
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('expiresAt');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        redirectToLoginPage();
         return Promise.reject(err);
       }
 
@@ -75,7 +82,7 @@ api.interceptors.response.use(
         isRefreshing = false;
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        redirectToLoginPage();
         return Promise.reject(err);
       }
 
@@ -100,7 +107,7 @@ api.interceptors.response.use(
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('expiresAt');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        redirectToLoginPage();
         return Promise.reject(err);
       } finally {
         isRefreshing = false;
