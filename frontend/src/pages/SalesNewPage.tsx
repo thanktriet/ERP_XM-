@@ -36,12 +36,12 @@ const NGAY_HIEN_TAI = new Date().toISOString().split('T')[0];
 
 // Labels cho danh mục phụ kiện
 const ACCESSORY_CATEGORY: Record<string, { label: string; icon: string }> = {
-  safety:  { label: 'Bảo hộ',    icon: '🪖' },
-  luggage: { label: 'Hành lý',   icon: '🎒' },
-  comfort: { label: 'Tiện nghi', icon: '💺' },
-  weather: { label: 'Thời tiết', icon: '🌧️' },
-  decor:   { label: 'Trang trí', icon: '✨' },
-  other:   { label: 'Khác',      icon: '📦' },
+  safety:  { label: 'Bảo hộ',    icon: '' },
+  luggage: { label: 'Hành lý',   icon: '' },
+  comfort: { label: 'Tiện nghi', icon: '' },
+  weather: { label: 'Thời tiết', icon: '' },
+  decor:   { label: 'Trang trí', icon: '' },
+  other:   { label: 'Khác',      icon: '' },
 };
 
 // ─── Component chính ─────────────────────────────────────────────────────────
@@ -802,7 +802,7 @@ export default function SalesNewPage() {
                         className={`pos-pk-cat-btn${filterCatPK === cat ? ' active' : ''}`}
                         onClick={() => setFilterCatPK(prev => prev === cat ? '' : cat)}
                       >
-                        {ACCESSORY_CATEGORY[cat]?.icon} {ACCESSORY_CATEGORY[cat]?.label ?? cat}
+                        {ACCESSORY_CATEGORY[cat]?.label ?? cat}
                       </button>
                     ))}
                   </div>
