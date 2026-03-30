@@ -1,5 +1,8 @@
 # Triển khai frontend tĩnh lên GitHub Pages (URL: https://<user>.github.io/ERP_XM-/)
 # Cài đặt repo: Settings → Pages → Build: GitHub Actions
+#
+# BẮT BUỘC: Settings → Secrets → Actions → thêm VITE_API_BASE_URL = URL đầy đủ tới API
+# (vd https://api.ten-ban.com hoặc https://xxx.railway.app), kết thúc bằng /api nếu backend mount tại /api
 name: Deploy frontend to GitHub Pages
 
 on:
@@ -33,6 +36,8 @@ jobs:
 
       - name: Cài đặt và build (base /ERP_XM-/)
         working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           npm ci
           npm run build:gh-pages

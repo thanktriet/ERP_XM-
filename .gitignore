@@ -27,3 +27,7 @@ nul
 
 # Claude local (có thể chứa đường dẫn / quyền nhạy cảm)
 .claude/settings.local.json
+
+# Claude agent / skills metadata (không cần thiết cho CI/CD)
+.agents/
+skills-lock.json

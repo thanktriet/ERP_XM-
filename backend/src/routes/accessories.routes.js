@@ -1,25 +1,35 @@
+// accessories.routes.js — mount tại /api/accessories
+// Toàn bộ logic đã chuyển vào inventory.routes.js (/api/inventory/accessories)
+// File này giữ lại để tương thích ngược với PurchaseOrdersPage.tsx gọi /api/accessories
 const router = require('express').Router();
 const {
   getAccessories,
   getAccessoryById,
   createAccessory,
   updateAccessory,
-  toggleAccessory,
+  accessoryStockIn,
+  accessoryStockOut,
+  accessoryAdjust,
+  getAccessoryMovements,
+  getAccessoryLowStock,
 } = require('../controllers/accessories.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
-const { validate }                = require('../middleware/validate.middleware');
-const { createAccessoryRules, updateAccessoryRules } = require('../validators/accessories.validator');
 
-// Tất cả route yêu cầu đăng nhập
 router.use(authenticate);
 
-// Đọc — tất cả nhân viên
-router.get('/',    getAccessories);
-router.get('/:id', getAccessoryById);
-
-// Ghi — chỉ admin và manager
-router.post('/', authorize('admin', 'manager'), createAccessoryRules, validate, createAccessory);
-router.put('/:id', authorize('admin', 'manager'), updateAccessoryRules, validate, updateAccessory);
-router.patch('/:id/toggle', authorize('admin', 'manager'), toggleAccessory);
+router.get('/low-stock',          getAccessoryLowStock);
+router.get('/',                   getAccessories);
+router.get('/:id',                getAccessoryById);
+router.post('/',
+  authorize('admin', 'manager', 'warehouse'), createAccessory);
+router.put('/:id',
+  authorize('admin', 'manager', 'warehouse'), updateAccessory);
+router.post('/:id/stock-in',
+  authorize('admin', 'manager', 'warehouse'), accessoryStockIn);
+router.post('/:id/stock-out',
+  authorize('admin', 'manager', 'warehouse', 'sales'), accessoryStockOut);
+router.post('/:id/adjust',
+  authorize('admin', 'manager', 'warehouse'), accessoryAdjust);
+router.get('/:id/movements',      getAccessoryMovements);
 
 module.exports = router;

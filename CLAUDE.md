@@ -125,3 +125,24 @@ Phân trang dùng Supabase `.range((page-1)*limit, page*limit-1)`.
 - **Trang frontend**: tất cả file trang đã có nhưng hầu hết là placeholder trống — phần việc chính còn lại là triển khai các component trang và kết nối với API
 - **Chưa có thư viện logging** — chỉ có `console.error` trong error middleware
 - **Chưa có transaction nguyên tử** — các thao tác CSDL nhiều bước trong controller chưa được bọc trong transaction
+
+
+<!-- ClaudeVibeCodeKit -->
+## ClaudeVibeCodeKit
+
+### Planning
+When planning complex tasks:
+1. Read .claude/docs/plan-execution-guide.md for format guide
+2. Use planning-agent for parallel execution optimization
+3. Output plan according to .claude/schemas/plan-schema.json
+
+### Available Commands
+- /research - Deep web research
+- /meeting-notes - Live meeting notes
+- /changelog - Generate changelog
+- /onboard - Developer onboarding
+- /handoff - Create handoff document for conversation transition
+- /continue - Resume work from a handoff document
+- /watzup - Check current project status
+- /social-media-post - Social content workflow
+<!-- /ClaudeVibeCodeKit -->

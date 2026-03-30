@@ -1,34 +1,72 @@
 const { supabaseAdmin } = require('../config/supabase');
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// DANH SÁCH & CHI TIẾT ĐƠN NHẬP HÀNG
+// ĐƠN NHẬP HÀNG (Purchase Orders)
+// Quy tắc: 1 đơn nhập = 1 loại hàng duy nhất
+//   item_type = 'vehicle'    → nhập xe máy điện
+//   item_type = 'spare_part' → nhập phụ tùng / linh kiện
+//   item_type = 'accessory'  → nhập phụ kiện bán kèm
+//
+// Luồng: draft → submitted → approved → (partial_received →) fully_received
+//        → invoiced → paid
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// GET /api/purchase-orders
+// ─── Helper: select chuẩn cho PO ─────────────────────────────────────────────
+const PO_SELECT = `
+  id, po_number, status, item_type, order_date, expected_date, actual_date,
+  subtotal, vat_amount, total_amount, paid_amount, balance_due,
+  payment_due_date, payment_method, payment_terms,
+  supplier_invoice_number, supplier_invoice_date,
+  warehouse_note, notes, cancel_reason, created_at,
+  acc_suppliers ( id, supplier_code, supplier_name, phone, email ),
+  users!created_by  ( full_name )
+`;
+
+// ─── Helper: select cho PO items (đa loại hàng) ──────────────────────────────
+const POI_SELECT = `
+  *,
+  vehicle_models ( id, brand, model_name, category, image_url, price_cost ),
+  spare_parts    ( id, code, name, unit, price_cost ),
+  accessories    ( id, code, name, unit, price )
+`;
+
+// ─── Danh sách nhà cung cấp (cho dropdown frontend) ──────────────────────────
+const getSuppliers = async (req, res) => {
+  try {
+    const { search } = req.query;
+    let q = supabaseAdmin
+      .from('acc_suppliers')
+      .select('id, supplier_code, supplier_name, phone, email, payment_terms, is_active')
+      .eq('is_active', true)
+      .order('supplier_name');
+
+    if (search) q = q.or(`supplier_name.ilike.%${search}%,supplier_code.ilike.%${search}%`);
+
+    const { data, error } = await q;
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ data, total: data.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET /api/purchase-orders — Danh sách đơn nhập hàng
 const getPurchaseOrders = async (req, res) => {
   try {
-    const page   = Math.max(1, parseInt(req.query.page)  || 1);
-    const limit  = Math.min(100, parseInt(req.query.limit) || 20);
-    const { status, supplier_id, branch_id, from_date, to_date, search } = req.query;
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 20);
+    const { status, from_date, to_date, search } = req.query;
 
     let q = supabaseAdmin
       .from('purchase_orders')
-      .select(`
-        id, po_number, status, order_date, expected_date, actual_date,
-        subtotal, vat_amount, total_amount, paid_amount, balance_due,
-        payment_due_date, supplier_invoice_number, created_at,
-        acc_suppliers ( id, supplier_code, supplier_name, phone ),
-        acc_branches  ( id, branch_code, branch_name )
-      `, { count: 'exact' })
+      .select(PO_SELECT, { count: 'exact' })
       .order('order_date',  { ascending: false })
       .order('created_at',  { ascending: false });
 
-    if (status)      q = q.eq('status', status);
-    if (supplier_id) q = q.eq('supplier_id', supplier_id);
-    if (branch_id)   q = q.eq('branch_id', branch_id);
-    if (from_date)   q = q.gte('order_date', from_date);
-    if (to_date)     q = q.lte('order_date', to_date);
-    if (search)      q = q.ilike('po_number', `%${search}%`);
+    if (status)    q = q.eq('status', status);
+    if (from_date) q = q.gte('order_date', from_date);
+    if (to_date)   q = q.lte('order_date', to_date);
+    if (search)    q = q.or(`po_number.ilike.%${search}%`);
 
     q = q.range((page - 1) * limit, page * limit - 1);
     const { data, count, error } = await q;
@@ -39,125 +77,128 @@ const getPurchaseOrders = async (req, res) => {
   }
 };
 
-// GET /api/purchase-orders/action-required — Dashboard: cần xử lý
-const getActionRequired = async (req, res) => {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('v_po_action_required')
-      .select('*');
-    if (error) return res.status(400).json({ error: error.message });
-    res.json({ data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// GET /api/purchase-orders/:id
+// GET /api/purchase-orders/:id — Chi tiết đơn kèm items (xe + phụ tùng + phụ kiện)
 const getPurchaseOrderDetail = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const [poRes, itemsRes, receiptsRes, paymentsRes] = await Promise.all([
+    const [poRes, itemsRes, receiptsRes] = await Promise.all([
       supabaseAdmin
         .from('purchase_orders')
         .select(`
           *,
-          acc_suppliers ( id, supplier_code, supplier_name, phone, email,
-                          tax_code, bank_account, bank_name, payment_terms ),
-          acc_branches  ( id, branch_code, branch_name ),
-          acc_vouchers  ( id, voucher_number, status )
+          acc_suppliers ( id, supplier_code, supplier_name, phone, email, bank_account, bank_name ),
+          users!created_by   ( full_name ),
+          users!approved_by  ( full_name ),
+          users!received_by  ( full_name )
         `)
         .eq('id', id)
         .single(),
 
+      // Lấy items kèm thông tin chi tiết theo từng loại hàng
       supabaseAdmin
         .from('purchase_order_items')
-        .select(`
-          *,
-          vehicle_models ( id, brand, model_name, category, price_cost )
-        `)
+        .select(POI_SELECT)
         .eq('po_id', id)
         .order('line_number'),
 
       supabaseAdmin
         .from('purchase_receipts')
-        .select('id, receipt_number, receipt_date, status, received_by')
+        .select('id, receipt_number, receipt_date, status, notes')
         .eq('po_id', id)
         .order('receipt_date', { ascending: false }),
-
-      supabaseAdmin
-        .from('po_payments')
-        .select('*')
-        .eq('po_id', id)
-        .order('payment_date', { ascending: false }),
     ]);
 
     if (!poRes.data) return res.status(404).json({ error: 'Không tìm thấy đơn nhập hàng' });
-
     res.json({
       purchase_order: poRes.data,
-      items:          itemsRes.data    || [],
-      receipts:       receiptsRes.data || [],
-      payments:       paymentsRes.data || [],
+      items:    itemsRes.data    || [],
+      receipts: receiptsRes.data || [],
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// TẠO / CẬP NHẬT ĐƠN NHẬP HÀNG
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// POST /api/purchase-orders
+// POST /api/purchase-orders — Tạo đơn nhập mới (draft)
+// 1 đơn chỉ 1 loại hàng: item_type xác định loại cho toàn bộ đơn
+//   'vehicle'    → nhập xe     (các dòng items dùng vehicle_model_id)
+//   'spare_part' → nhập phụ tùng (các dòng items dùng spare_part_id)
+//   'accessory'  → nhập phụ kiện (các dòng items dùng accessory_id)
 const createPurchaseOrder = async (req, res) => {
   try {
     const {
       supplier_id, branch_id, order_date, expected_date,
-      payment_terms, payment_method, notes, items = [],
+      payment_terms, payment_method, notes, warehouse_note,
+      item_type,   // loại hàng của cả đơn: 'vehicle' | 'spare_part' | 'accessory'
+      items = [],
     } = req.body;
 
-    if (!items.length)
-      return res.status(400).json({ error: 'Đơn hàng cần ít nhất 1 dòng xe' });
+    if (!supplier_id)  return res.status(400).json({ error: 'Thiếu nhà cung cấp (supplier_id)' });
+    if (!item_type || !['vehicle', 'spare_part', 'accessory'].includes(item_type))
+      return res.status(400).json({ error: 'item_type phải là "vehicle", "spare_part" hoặc "accessory"' });
+    if (!items.length) return res.status(400).json({ error: 'Đơn nhập cần ít nhất 1 dòng hàng' });
 
-    // Tính ngày hạn thanh toán
-    const oDate      = new Date(order_date || Date.now());
-    const terms      = payment_terms ?? 30;
-    const dueDate    = new Date(oDate);
-    dueDate.setDate(dueDate.getDate() + terms);
+    // Validate từng dòng — bắt buộc cùng loại với item_type của đơn
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (item_type === 'vehicle'    && !it.vehicle_model_id)
+        return res.status(400).json({ error: `Dòng ${i + 1}: chọn mẫu xe (vehicle_model_id)` });
+      if (item_type === 'spare_part' && !it.spare_part_id)
+        return res.status(400).json({ error: `Dòng ${i + 1}: chọn phụ tùng (spare_part_id)` });
+      if (item_type === 'accessory'  && !it.accessory_id)
+        return res.status(400).json({ error: `Dòng ${i + 1}: chọn phụ kiện (accessory_id)` });
+      if (!it.qty_ordered || it.qty_ordered < 1)
+        return res.status(400).json({ error: `Dòng ${i + 1}: số lượng phải >= 1` });
+    }
 
-    // Tạo đầu phiếu (po_number tự sinh qua trigger)
+    // Kiểm tra NCC tồn tại
+    const { data: ncc, error: nccErr } = await supabaseAdmin
+      .from('acc_suppliers').select('id, supplier_name, payment_terms').eq('id', supplier_id).single();
+    if (nccErr || !ncc) return res.status(404).json({ error: 'Không tìm thấy nhà cung cấp' });
+
+    // Tạo đầu phiếu — item_type ghi vào đơn để biết loại hàng
     const { data: po, error: poErr } = await supabaseAdmin
       .from('purchase_orders')
       .insert([{
         supplier_id,
-        branch_id:        branch_id || null,
-        order_date:       oDate.toISOString().slice(0, 10),
-        expected_date:    expected_date || null,
-        payment_terms:    terms,
-        payment_method:   payment_method || null,
-        payment_due_date: dueDate.toISOString().slice(0, 10),
-        notes:            notes || null,
-        status:           'draft',
-        created_by:       req.user.sub,
+        branch_id:      branch_id     || null,
+        order_date:     order_date    || new Date().toISOString().slice(0, 10),
+        expected_date:  expected_date || null,
+        payment_terms:  payment_terms ?? ncc.payment_terms ?? 30,
+        payment_method: payment_method || null,
+        notes:          notes          || null,
+        warehouse_note: warehouse_note || null,
+        item_type,    // 'vehicle' | 'spare_part' | 'accessory'
+        status:         'draft',
+        created_by:     req.user?.sub  || null,
+        po_number:      '',   // tự sinh qua trigger fn_generate_po_number
       }])
       .select()
       .single();
 
     if (poErr) return res.status(400).json({ error: poErr.message });
 
-    // Thêm dòng chi tiết
+    // Xây dựng các dòng chi tiết — tất cả cùng item_type với đơn
     const itemRows = items.map((it, idx) => ({
       po_id:            po.id,
       line_number:      idx + 1,
-      vehicle_model_id: it.vehicle_model_id,
-      color:            it.color     || null,
-      year_manufacture: it.year_manufacture || null,
+      item_type,
+      // Xe
+      vehicle_model_id: item_type === 'vehicle'    ? (it.vehicle_model_id || null) : null,
+      color:            item_type === 'vehicle'    ? (it.color            || null) : null,
+      year_manufacture: item_type === 'vehicle'    ? (it.year_manufacture || new Date().getFullYear()) : null,
+      // Phụ tùng
+      spare_part_id:    item_type === 'spare_part' ? (it.spare_part_id   || null) : null,
+      // Phụ kiện
+      accessory_id:     item_type === 'accessory'  ? (it.accessory_id    || null) : null,
+      // Tên dự phòng
+      item_name:        it.item_name || null,
+      // Số lượng + giá
       qty_ordered:      it.qty_ordered,
-      unit_cost:        it.unit_cost,
-      vat_rate:         it.vat_rate ?? 10,
-      notes:            it.notes    || null,
+      unit_cost:        it.unit_cost  || 0,
+      vat_rate:         it.vat_rate   ?? 10,
+      notes:            it.notes      || null,
     }));
 
     const { error: itemErr } = await supabaseAdmin
@@ -169,247 +210,219 @@ const createPurchaseOrder = async (req, res) => {
       return res.status(400).json({ error: itemErr.message });
     }
 
-    // Lấy lại PO với tổng tiền đã được trigger cập nhật
+    // Lấy lại PO với tổng tiền đã được trigger tính
     const { data: finalPO } = await supabaseAdmin
-      .from('purchase_orders')
-      .select('*')
-      .eq('id', po.id)
-      .single();
+      .from('purchase_orders').select(PO_SELECT).eq('id', po.id).single();
 
-    res.status(201).json({ message: `Đã tạo đơn nhập hàng ${po.po_number}`, data: finalPO });
+    res.status(201).json({
+      message: `Đã tạo đơn nhập ${finalPO?.po_number || po.po_number}`,
+      data: finalPO,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// PUT /api/purchase-orders/:id
+// PUT /api/purchase-orders/:id — Cập nhật thông tin (chỉ khi draft)
 const updatePurchaseOrder = async (req, res) => {
   try {
     const { id } = req.params;
+    const { data: cur } = await supabaseAdmin
+      .from('purchase_orders').select('status, po_number').eq('id', id).single();
+    if (!cur) return res.status(404).json({ error: 'Không tìm thấy đơn nhập hàng' });
 
-    const { data: current } = await supabaseAdmin
-      .from('purchase_orders')
-      .select('status, po_number')
-      .eq('id', id)
-      .single();
+    if (cur.status !== 'draft')
+      return res.status(409).json({ error: `Đơn ${cur.po_number} đang ở trạng thái "${cur.status}" — chỉ sửa được khi còn draft` });
 
-    if (!current) return res.status(404).json({ error: 'Không tìm thấy đơn nhập hàng' });
-
-    if (!['draft','submitted'].includes(current.status))
-      return res.status(409).json({
-        error: `Đơn ${current.po_number} đang ở trạng thái ${current.status}, chỉ được sửa khi còn draft hoặc submitted`,
-      });
-
-    const allowed = ['expected_date','payment_terms','payment_method',
-                     'warehouse_note','notes','supplier_invoice_number',
-                     'supplier_invoice_date','supplier_invoice_url'];
+    const allowed = ['supplier_id', 'expected_date', 'payment_terms', 'payment_method', 'notes', 'warehouse_note'];
     const updates = {};
     allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
 
     const { data, error } = await supabaseAdmin
-      .from('purchase_orders')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
+      .from('purchase_orders').update(updates).eq('id', id).select(PO_SELECT).single();
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ message: `Đã cập nhật đơn ${current.po_number}`, data });
+    res.json({ message: `Đã cập nhật đơn ${cur.po_number}`, data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// THAY ĐỔI TRẠNG THÁI ĐƠN
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// PATCH /api/purchase-orders/:id/status
+// PATCH /api/purchase-orders/:id/status — Chuyển trạng thái đơn
 const updatePOStatus = async (req, res) => {
   try {
-    const { id }        = req.params;
+    const { id } = req.params;
     const { status, cancel_reason } = req.body;
 
-    const { data: current } = await supabaseAdmin
-      .from('purchase_orders')
-      .select('status, po_number')
-      .eq('id', id)
-      .single();
-
-    if (!current) return res.status(404).json({ error: 'Không tìm thấy đơn nhập hàng' });
-
-    // Kiểm tra luồng trạng thái hợp lệ
     const allowedTransitions = {
-      draft:             ['submitted','cancelled'],
-      submitted:         ['approved','rejected','cancelled'],
-      approved:          ['partial_received','cancelled'],
-      partial_received:  ['fully_received'],
-      fully_received:    ['invoiced'],
-      invoiced:          ['paid'],
+      draft:            ['submitted', 'cancelled'],
+      submitted:        ['approved', 'rejected', 'cancelled'],
+      approved:         ['cancelled'],
+      partial_received: [],
+      fully_received:   ['invoiced'],
+      invoiced:         ['paid'],
     };
 
-    const allowed = allowedTransitions[current.status] || [];
-    if (!allowed.includes(status))
+    const { data: cur } = await supabaseAdmin
+      .from('purchase_orders').select('status, po_number').eq('id', id).single();
+    if (!cur) return res.status(404).json({ error: 'Không tìm thấy đơn nhập hàng' });
+
+    const ok = (allowedTransitions[cur.status] || []).includes(status);
+    if (!ok)
       return res.status(409).json({
-        error: `Không thể chuyển từ ${current.status} sang ${status}`,
+        error: `Không thể chuyển từ "${cur.status}" sang "${status}"`,
       });
 
     const updates = { status };
-    if (status === 'cancelled') updates.cancel_reason = cancel_reason || null;
-    if (status === 'submitted') updates.submitted_by  = req.user.sub;
-    if (status === 'approved')  updates.approved_by   = req.user.sub;
+    if (status === 'submitted')  updates.submitted_by = req.user?.sub || null;
+    if (status === 'approved')   updates.approved_by  = req.user?.sub || null;
+    if (status === 'cancelled')  updates.cancel_reason = cancel_reason || null;
+    if (status === 'invoiced' && req.body.supplier_invoice_number) {
+      updates.supplier_invoice_number = req.body.supplier_invoice_number;
+      updates.supplier_invoice_date   = req.body.supplier_invoice_date || new Date().toISOString().slice(0, 10);
+    }
+    if (status === 'approved' && req.body.payment_due_date) {
+      updates.payment_due_date = req.body.payment_due_date;
+    }
 
     const { data, error } = await supabaseAdmin
-      .from('purchase_orders')
-      .update(updates)
-      .eq('id', id)
-      .select()
-      .single();
-
+      .from('purchase_orders').update(updates).eq('id', id).select(PO_SELECT).single();
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ message: `Đơn ${current.po_number} đã chuyển sang ${status}`, data });
+
+    const tenTrangThai = {
+      submitted: 'đã gửi NCC', approved: 'đã duyệt', rejected: 'đã từ chối',
+      cancelled: 'đã hủy', invoiced: 'đã có hóa đơn', paid: 'đã thanh toán',
+    };
+    res.json({ message: `Đơn ${cur.po_number} ${tenTrangThai[status] ?? status}`, data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// PHIẾU NHẬN HÀNG (Receipts)
-// ═══════════════════════════════════════════════════════════════════════════════
-
 // POST /api/purchase-orders/:id/receipts — Tạo phiếu nhận hàng
+// Body:
+//   receipt_date, notes
+//   vehicles: [{ po_item_id, vin, engine_number, battery_serial, color, year_manufacture, condition, defect_notes, actual_unit_cost }]
+//   parts:    [{ po_item_id, qty_received, condition, defect_notes }]  ← phụ tùng + phụ kiện
 const createReceipt = async (req, res) => {
   try {
-    const { id: poId }    = req.params;
-    const { receipt_date, notes } = req.body;
+    const { id } = req.params;
+    const { receipt_date, notes, vehicles = [], parts = [] } = req.body;
 
-    // Kiểm tra PO đang ở trạng thái có thể nhận hàng
     const { data: po } = await supabaseAdmin
-      .from('purchase_orders')
-      .select('status, po_number')
-      .eq('id', poId)
-      .single();
-
+      .from('purchase_orders').select('status, po_number').eq('id', id).single();
     if (!po) return res.status(404).json({ error: 'Không tìm thấy đơn nhập hàng' });
-    if (!['approved','partial_received'].includes(po.status))
+    if (!['approved', 'partial_received'].includes(po.status))
       return res.status(409).json({
-        error: `Đơn ${po.po_number} chưa được duyệt hoặc không còn hàng chờ giao`,
+        error: `Đơn phải ở trạng thái "approved" hoặc "partial_received" để nhận hàng (hiện: ${po.status})`,
       });
 
-    // receipt_number tự sinh qua trigger
-    const { data, error } = await supabaseAdmin
+    const tongHang = vehicles.length + parts.length;
+    if (tongHang === 0)
+      return res.status(400).json({ error: 'Cần ít nhất 1 mặt hàng để tạo phiếu nhận' });
+
+    // Tạo phiếu nhận (receipt_number tự sinh qua trigger)
+    const { data: receipt, error: rcpErr } = await supabaseAdmin
       .from('purchase_receipts')
       .insert([{
-        po_id:        poId,
-        receipt_date: receipt_date || new Date().toISOString().slice(0, 10),
-        status:       'pending',
-        received_by:  req.user.sub,
-        notes:        notes || null,
+        po_id:          id,
+        receipt_date:   receipt_date || new Date().toISOString().slice(0, 10),
+        notes:          notes || null,
+        status:         'pending',
+        received_by:    req.user?.sub || null,
+        receipt_number: '',
       }])
       .select()
       .single();
 
-    if (error) return res.status(400).json({ error: error.message });
-    res.status(201).json({ message: `Đã tạo phiếu nhận hàng ${data.receipt_number}`, data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
+    if (rcpErr) return res.status(400).json({ error: rcpErr.message });
 
-// POST /api/purchase-orders/receipts/:receiptId/items — Thêm xe vào phiếu
-const addReceiptItems = async (req, res) => {
-  try {
-    const { receiptId } = req.params;
-    const { items }     = req.body;
+    // ── Dòng xe ────────────────────────────────────────────────────────────
+    const itemRows = [];
+    let lineNum = 1;
 
-    if (!Array.isArray(items) || !items.length)
-      return res.status(400).json({ error: 'Cần ít nhất 1 xe' });
-
-    const { data: receipt } = await supabaseAdmin
-      .from('purchase_receipts')
-      .select('status, po_id')
-      .eq('id', receiptId)
-      .single();
-
-    if (!receipt) return res.status(404).json({ error: 'Không tìm thấy phiếu nhận hàng' });
-    if (receipt.status !== 'pending')
-      return res.status(409).json({ error: 'Phiếu đã được xử lý, không thể thêm xe' });
-
-    // Lấy số dòng hiện tại để tiếp tục đánh số
-    const { count } = await supabaseAdmin
-      .from('purchase_receipt_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('receipt_id', receiptId);
-
-    const rows = items.map((it, idx) => ({
-      receipt_id:      receiptId,
-      po_item_id:      it.po_item_id,
-      line_number:     (count || 0) + idx + 1,
-      vin:             it.vin             || null,
-      engine_number:   it.engine_number   || null,
-      battery_serial:  it.battery_serial  || null,
-      color:           it.color           || null,
-      year_manufacture: it.year_manufacture || null,
-      condition:       it.condition       || 'ok',
-      defect_notes:    it.defect_notes    || null,
-      actual_unit_cost: it.actual_unit_cost || null,
-    }));
-
-    const { data, error } = await supabaseAdmin
-      .from('purchase_receipt_items')
-      .insert(rows)
-      .select();
-
-    if (error) return res.status(400).json({ error: error.message });
-    res.status(201).json({ message: `Đã thêm ${data.length} xe vào phiếu nhận`, data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// PATCH /api/purchase-orders/receipts/:receiptId/accept — Chấp nhận + nhập kho
-const acceptReceipt = async (req, res) => {
-  try {
-    const { receiptId }    = req.params;
-    const { inspection_notes, items } = req.body;
-
-    const { data: receipt } = await supabaseAdmin
-      .from('purchase_receipts')
-      .select('status, receipt_number')
-      .eq('id', receiptId)
-      .single();
-
-    if (!receipt) return res.status(404).json({ error: 'Không tìm thấy phiếu nhận hàng' });
-    if (receipt.status === 'accepted')
-      return res.status(409).json({ error: 'Phiếu đã được chấp nhận trước đó' });
-
-    // Cập nhật từng dòng xe (condition, vin, notes...)
-    if (items && items.length) {
-      for (const it of items) {
-        await supabaseAdmin
-          .from('purchase_receipt_items')
-          .update({
-            condition:        it.condition,
-            defect_notes:     it.defect_notes     || null,
-            vin:              it.vin              || null,
-            engine_number:    it.engine_number    || null,
-            battery_serial:   it.battery_serial   || null,
-            actual_unit_cost: it.actual_unit_cost || null,
-          })
-          .eq('id', it.id)
-          .eq('receipt_id', receiptId);
-      }
+    for (const v of vehicles) {
+      itemRows.push({
+        receipt_id:       receipt.id,
+        po_item_id:       v.po_item_id,
+        line_number:      lineNum++,
+        item_type:        'vehicle',
+        vin:              v.vin              || null,
+        engine_number:    v.engine_number    || null,
+        battery_serial:   v.battery_serial   || null,
+        color:            v.color            || null,
+        year_manufacture: v.year_manufacture || null,
+        condition:        v.condition        || 'ok',
+        defect_notes:     v.defect_notes     || null,
+        actual_unit_cost: v.actual_unit_cost || null,
+        qty_received:     1,
+      });
     }
 
-    // Chuyển trạng thái → accepted: trigger tự tạo inventory_vehicles + cập nhật PO
+    // ── Dòng phụ tùng / phụ kiện ───────────────────────────────────────────
+    for (const p of parts) {
+      if (!p.po_item_id) continue;
+      if (!p.qty_received || p.qty_received < 1)
+        return res.status(400).json({ error: 'Số lượng nhận phụ tùng/phụ kiện phải >= 1' });
+
+      // Lấy item_type từ PO item để điền đúng cột
+      const { data: poItem } = await supabaseAdmin
+        .from('purchase_order_items')
+        .select('item_type, spare_part_id, accessory_id')
+        .eq('id', p.po_item_id)
+        .single();
+
+      itemRows.push({
+        receipt_id:    receipt.id,
+        po_item_id:    p.po_item_id,
+        line_number:   lineNum++,
+        item_type:     poItem?.item_type     || 'spare_part',
+        spare_part_id: poItem?.spare_part_id || null,
+        accessory_id:  poItem?.accessory_id  || null,
+        condition:     p.condition           || 'ok',
+        defect_notes:  p.defect_notes        || null,
+        qty_received:  p.qty_received,
+      });
+    }
+
+    const { error: itemErr } = await supabaseAdmin
+      .from('purchase_receipt_items').insert(itemRows);
+
+    if (itemErr) {
+      await supabaseAdmin.from('purchase_receipts').delete().eq('id', receipt.id);
+      return res.status(400).json({ error: itemErr.message });
+    }
+
+    res.status(201).json({
+      message: `Đã tạo phiếu nhận hàng cho đơn ${po.po_number}`,
+      data: receipt,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PATCH /api/purchase-orders/receipts/:receiptId/accept — Chấp nhận phiếu → tự nhập kho
+const acceptReceipt = async (req, res) => {
+  try {
+    const { receiptId } = req.params;
+    const { inspected_by, inspection_notes } = req.body;
+
+    const { data: rcp } = await supabaseAdmin
+      .from('purchase_receipts').select('status, receipt_number').eq('id', receiptId).single();
+    if (!rcp) return res.status(404).json({ error: 'Không tìm thấy phiếu nhận hàng' });
+    if (rcp.status === 'accepted') return res.status(409).json({ error: 'Phiếu đã được chấp nhận rồi' });
+
+    // Cập nhật status → accepted
+    // Trigger fn_receipt_accepted sẽ tự động:
+    //   - Xe:        tạo inventory_vehicles
+    //   - Phụ tùng:  ghi stock_movements (import) → cộng qty_in_stock
+    //   - Phụ kiện:  cộng qty_received trên PO item
     const { data, error } = await supabaseAdmin
       .from('purchase_receipts')
       .update({
         status:           'accepted',
+        inspected_by:     inspected_by || req.user?.sub || null,
         inspection_notes: inspection_notes || null,
-        inspected_by:     req.user.sub,
       })
       .eq('id', receiptId)
       .select()
@@ -417,15 +430,25 @@ const acceptReceipt = async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    // Đếm xe đã vào kho từ phiếu này
-    const { count: vehicleCount } = await supabaseAdmin
+    // Thống kê số lượng từng loại đã nhập
+    const { data: items } = await supabaseAdmin
       .from('purchase_receipt_items')
-      .select('*', { count: 'exact', head: true })
+      .select('item_type, qty_received, condition')
       .eq('receipt_id', receiptId)
-      .in('condition', ['ok','defect']);
+      .in('condition', ['ok', 'defect']);
+
+    const slXe   = (items || []).filter(x => x.item_type === 'vehicle').length;
+    const slPT   = (items || []).filter(x => x.item_type === 'spare_part').reduce((s, x) => s + x.qty_received, 0);
+    const slPK   = (items || []).filter(x => x.item_type === 'accessory').reduce((s, x) => s + x.qty_received, 0);
+
+    const tongKet = [
+      slXe  > 0 ? `${slXe} xe`           : null,
+      slPT  > 0 ? `${slPT} phụ tùng`     : null,
+      slPK  > 0 ? `${slPK} phụ kiện`     : null,
+    ].filter(Boolean).join(', ');
 
     res.json({
-      message: `Phiếu ${receipt.receipt_number} đã chấp nhận — ${vehicleCount} xe nhập kho thành công`,
+      message: `Phiếu ${rcp.receipt_number} đã chấp nhận — nhập kho: ${tongKet || '0 hàng'}`,
       data,
     });
   } catch (err) {
@@ -433,131 +456,173 @@ const acceptReceipt = async (req, res) => {
   }
 };
 
-// GET /api/purchase-orders/receipts/:receiptId — Chi tiết phiếu nhận
+// GET /api/purchase-orders/receipts/:receiptId — Chi tiết phiếu nhận hàng
 const getReceiptDetail = async (req, res) => {
   try {
     const { receiptId } = req.params;
-
-    const [receiptRes, itemsRes] = await Promise.all([
-      supabaseAdmin
-        .from('purchase_receipts')
-        .select(`
-          *,
-          purchase_orders ( po_number, supplier_id,
-            acc_suppliers ( supplier_name ) )
-        `)
-        .eq('id', receiptId)
-        .single(),
-
+    const [rcpRes, itemsRes] = await Promise.all([
+      supabaseAdmin.from('purchase_receipts').select('*').eq('id', receiptId).single(),
       supabaseAdmin
         .from('purchase_receipt_items')
         .select(`
           *,
           purchase_order_items (
-            vehicle_model_id, unit_cost,
-            vehicle_models ( brand, model_name, category )
+            item_type, vehicle_model_id, spare_part_id, accessory_id, unit_cost,
+            vehicle_models ( brand, model_name ),
+            spare_parts    ( code, name, unit ),
+            accessories    ( code, name, unit )
           ),
           inventory_vehicles ( id, vin, status )
         `)
         .eq('receipt_id', receiptId)
         .order('line_number'),
     ]);
-
-    if (!receiptRes.data) return res.status(404).json({ error: 'Không tìm thấy phiếu nhận hàng' });
-    res.json({ receipt: receiptRes.data, items: itemsRes.data || [] });
+    if (!rcpRes.data) return res.status(404).json({ error: 'Không tìm thấy phiếu nhận hàng' });
+    res.json({ receipt: rcpRes.data, items: itemsRes.data || [] });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// THANH TOÁN NCC
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// POST /api/purchase-orders/:id/payments
+// POST /api/purchase-orders/:id/payments — Ghi nhận thanh toán NCC
 const createPayment = async (req, res) => {
   try {
-    const { id: poId }  = req.params;
+    const { id } = req.params;
     const { amount, payment_method, payment_date, bank_reference, note } = req.body;
 
-    const { data: po } = await supabaseAdmin
-      .from('purchase_orders')
-      .select('status, po_number, balance_due, total_amount')
-      .eq('id', poId)
-      .single();
+    if (!amount || amount <= 0) return res.status(400).json({ error: 'Số tiền thanh toán phải > 0' });
 
+    const { data: po } = await supabaseAdmin
+      .from('purchase_orders').select('status, po_number, balance_due').eq('id', id).single();
     if (!po) return res.status(404).json({ error: 'Không tìm thấy đơn nhập hàng' });
-    if (!['fully_received','invoiced','paid'].includes(po.status))
-      return res.status(409).json({ error: 'Chỉ thanh toán sau khi đã nhận hàng và có hoá đơn' });
+    if (!['invoiced', 'fully_received'].includes(po.status))
+      return res.status(409).json({ error: `Chỉ thanh toán được đơn ở trạng thái "invoiced" hoặc "fully_received"` });
     if (amount > po.balance_due)
-      return res.status(400).json({
-        error: `Số tiền thanh toán (${amount.toLocaleString()}) vượt quá số còn nợ (${po.balance_due.toLocaleString()})`,
+      return res.status(409).json({
+        error: `Số tiền thanh toán (${amount.toLocaleString('vi-VN')}₫) vượt quá số dư còn nợ (${po.balance_due.toLocaleString('vi-VN')}₫)`,
       });
 
-    // payment_number tự sinh qua trigger
     const { data, error } = await supabaseAdmin
       .from('po_payments')
       .insert([{
-        po_id: poId,
+        po_id:          id,
         amount,
-        payment_method,
+        payment_method: payment_method || 'bank_transfer',
         payment_date:   payment_date   || new Date().toISOString().slice(0, 10),
         bank_reference: bank_reference || null,
         note:           note           || null,
-        created_by:     req.user.sub,
+        created_by:     req.user?.sub  || null,
+        payment_number: '',   // tự sinh qua trigger
       }])
       .select()
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
-
-    // Lấy lại balance_due sau khi trigger cập nhật
-    const { data: updatedPO } = await supabaseAdmin
-      .from('purchase_orders')
-      .select('status, paid_amount, balance_due')
-      .eq('id', poId)
-      .single();
-
     res.status(201).json({
-      message: `Đã ghi nhận thanh toán ${data.payment_number} cho đơn ${po.po_number}`,
-      payment: data,
-      po_summary: {
-        status:       updatedPO.status,
-        paid_amount:  updatedPO.paid_amount,
-        balance_due:  updatedPO.balance_due,
-      },
+      message: `Đã ghi nhận thanh toán ${amount.toLocaleString('vi-VN')}₫ cho đơn ${po.po_number}`,
+      data,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// GET /api/purchase-orders/monthly-summary — Báo cáo nhập hàng theo tháng
-const getMonthlySummary = async (req, res) => {
+// GET /api/purchase-orders/action-required — Dashboard: đơn cần xử lý
+const getActionRequired = async (req, res) => {
   try {
     const { data, error } = await supabaseAdmin
-      .from('v_po_monthly_summary')
+      .from('v_po_action_required')
       .select('*')
-      .limit(24);
+      .limit(50);
     if (error) return res.status(400).json({ error: error.message });
-    res.json({ data });
+    res.json({ data, total: data.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// POST /api/purchase-orders/suppliers — Tạo nhà cung cấp mới
+const createSupplier = async (req, res) => {
+  try {
+    const orgId = '00000000-0000-0000-0000-000000000001';
+
+    // Tự sinh supplier_code: NCC000001
+    const { count } = await supabaseAdmin
+      .from('acc_suppliers')
+      .select('*', { count: 'exact', head: true })
+      .eq('org_id', orgId);
+
+    const supplierCode = `NCC${String((count || 0) + 1).padStart(6, '0')}`;
+
+    const { data, error } = await supabaseAdmin
+      .from('acc_suppliers')
+      .insert([{ org_id: orgId, supplier_code: supplierCode, ...req.body }])
+      .select()
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+    res.status(201).json({ message: `Đã thêm nhà cung cấp ${supplierCode}`, data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PUT /api/purchase-orders/suppliers/:id — Cập nhật nhà cung cấp
+const updateSupplier = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const allowed = ['supplier_name', 'contact_person', 'phone', 'email', 'address',
+                     'tax_code', 'bank_account', 'bank_name', 'payment_terms',
+                     'credit_limit', 'is_active', 'notes'];
+    const updates = {};
+    allowed.forEach(f => { if (req.body[f] !== undefined) updates[f] = req.body[f]; });
+
+    const { data, error } = await supabaseAdmin
+      .from('acc_suppliers')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+    if (!data)  return res.status(404).json({ error: 'Không tìm thấy nhà cung cấp' });
+    res.json({ message: 'Đã cập nhật nhà cung cấp', data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// PATCH /api/purchase-orders/suppliers/:id — Bật/tắt trạng thái
+const toggleSupplier = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_active } = req.body;
+
+    const { data, error } = await supabaseAdmin
+      .from('acc_suppliers')
+      .update({ is_active })
+      .eq('id', id)
+      .select('id, supplier_name, is_active')
+      .single();
+
+    if (error) return res.status(400).json({ error: error.message });
+    if (!data)  return res.status(404).json({ error: 'Không tìm thấy nhà cung cấp' });
+    res.json({ message: `Đã ${is_active ? 'kích hoạt' : 'ngừng'} nhà cung cấp`, data });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 module.exports = {
+  getSuppliers, createSupplier, updateSupplier, toggleSupplier,
   getPurchaseOrders,
-  getActionRequired,
   getPurchaseOrderDetail,
   createPurchaseOrder,
   updatePurchaseOrder,
   updatePOStatus,
   createReceipt,
-  addReceiptItems,
   acceptReceipt,
   getReceiptDetail,
   createPayment,
-  getMonthlySummary,
+  getActionRequired,
 };

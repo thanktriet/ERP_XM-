@@ -19,10 +19,20 @@ const { errorHandler, notFoundHandler } = require('./middleware/error.middleware
 
 const app = express();
 
+// CORS: FRONTEND_URL có thể liệt kê nhiều origin, phân tách bằng dấu phẩy (local + GitHub Pages, v.v.)
+const corsOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (corsOrigins.includes(origin)) return callback(null, true);
+    return callback(null, false);
+  },
+  credentials: true,
 }));
 // Tăng giới hạn JSON body lên 2MB (dùng cho các request thông thường)
 app.use(express.json({ limit: '2mb' }));

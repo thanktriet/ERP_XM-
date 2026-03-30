@@ -7,9 +7,24 @@ function redirectToLoginPage() {
   window.location.href = b.endsWith('/') ? `${b}login` : `${b}/login`;
 }
 
+const rawApiBase = typeof import.meta.env.VITE_API_BASE_URL === 'string'
+  ? import.meta.env.VITE_API_BASE_URL.trim()
+  : '';
+/** Local/Vite proxy: /api. Trên github.io bắt buộc URL tuyệt đối https://.../api */
+const API_BASE = rawApiBase || '/api';
+
+if (typeof window !== 'undefined' && API_BASE.startsWith('/') && window.location.hostname.endsWith('github.io')) {
+  const mistaken = new URL(API_BASE, window.location.origin).href;
+  console.error(
+    '[ERP] API đang trỏ tới',
+    mistaken,
+    '— GitHub Pages không phục vụ Express. 405/404 là do POST tới host sai.\n' +
+      '→ Build lại với secret VITE_API_BASE_URL = URL backend public (vd https://ten-mien.com/api).',
+  );
+}
+
 const api = axios.create({
-  // GitHub Pages: build kèm VITE_API_BASE_URL=https://api-cua-ban.com (có /api nếu backend mount tại đó)
-  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
+  baseURL: API_BASE,
   timeout: 15000,
   headers: { 'Content-Type': 'application/json' },
 });

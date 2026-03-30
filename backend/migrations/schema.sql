@@ -294,8 +294,11 @@ ALTER TABLE inventory_vehicles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE finance_transactions ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Cho phép authenticated users đọc
-CREATE POLICY "Allow authenticated read" ON customers FOR SELECT TO authenticated USING (true);
-CREATE POLICY "Allow authenticated read" ON sales_orders FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Allow authenticated read" ON customers;
+DROP POLICY IF EXISTS "Allow authenticated read" ON sales_orders;
+DROP POLICY IF EXISTS "Allow authenticated read" ON inventory_vehicles;
+CREATE POLICY "Allow authenticated read" ON customers          FOR SELECT TO authenticated USING (true);
+CREATE POLICY "Allow authenticated read" ON sales_orders       FOR SELECT TO authenticated USING (true);
 CREATE POLICY "Allow authenticated read" ON inventory_vehicles FOR SELECT TO authenticated USING (true);
 
 -- ============================================

@@ -1,7 +1,21 @@
 const router  = require('express').Router();
 const multer  = require('multer');
-const { getInventory, addVehicle, updateVehicle, deleteVehicle, getStockSummary, getSpareParts, getLowStockAlert } = require('../controllers/inventory.controller');
+const {
+  getInventory, addVehicle, updateVehicle, deleteVehicle, getStockSummary,
+  getSpareParts, getSparePartById, createSparePart, updateSparePart,
+  stockIn, stockOut, getStockMovements, getLowStockAlert,
+} = require('../controllers/inventory.controller');
 const { previewImport, confirmImport, downloadTemplate } = require('../controllers/inventoryImport.controller');
+const {
+  getAccessories, getAccessoryById, createAccessory, updateAccessory,
+  accessoryStockIn, accessoryStockOut, accessoryAdjust,
+  getAccessoryMovements, getAccessoryLowStock,
+} = require('../controllers/accessories.controller');
+const {
+  getGiftItems, getGiftItemById, createGiftItem, updateGiftItem,
+  giftStockIn, giftStockOut, getGiftMovements,
+  getOrderGifts, addOrderGift, issueOrderGift, getGiftLowStock,
+} = require('../controllers/gifts.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
 
 // Multer nhận file Excel (tối đa 10 MB, chỉ .xlsx/.xls)
@@ -35,14 +49,68 @@ router.post('/import/confirm',
   confirmImport,
 );
 
-// ─── CRUD thông thường ────────────────────────────────────────────────────────
-router.get('/',            getInventory);
-router.get('/summary',     getStockSummary);
-router.get('/spare-parts', getSpareParts);
-router.get('/low-stock',   getLowStockAlert);
-router.post('/',           addVehicle);
-router.put('/:id',         updateVehicle);
-router.delete('/:id',      deleteVehicle);
+// ─── Phụ tùng (spare-parts) — đặt TRƯỚC /:id ─────────────────────────────────
+router.get('/spare-parts',            getSpareParts);
+router.get('/spare-parts/:id',        getSparePartById);
+router.post('/spare-parts',
+  authorize('admin', 'manager', 'warehouse'),
+  createSparePart);
+router.put('/spare-parts/:id',
+  authorize('admin', 'manager', 'warehouse'),
+  updateSparePart);
+router.post('/spare-parts/:id/stock-in',
+  authorize('admin', 'manager', 'warehouse'),
+  stockIn);
+router.post('/spare-parts/:id/stock-out',
+  authorize('admin', 'manager', 'warehouse', 'technician'),
+  stockOut);
+router.get('/spare-parts/:id/movements', getStockMovements);
+
+// ─── Tồn kho & cảnh báo ───────────────────────────────────────────────────────
+router.get('/summary',   getStockSummary);
+router.get('/low-stock', getLowStockAlert);
+
+// ─── Phụ kiện (accessories) ───────────────────────────────────────────────────
+router.get('/accessories/low-stock',           getAccessoryLowStock);
+router.get('/accessories',                     getAccessories);
+router.get('/accessories/:id',                 getAccessoryById);
+router.post('/accessories',
+  authorize('admin', 'manager', 'warehouse'),  createAccessory);
+router.put('/accessories/:id',
+  authorize('admin', 'manager', 'warehouse'),  updateAccessory);
+router.post('/accessories/:id/stock-in',
+  authorize('admin', 'manager', 'warehouse'),  accessoryStockIn);
+router.post('/accessories/:id/stock-out',
+  authorize('admin', 'manager', 'warehouse', 'sales'), accessoryStockOut);
+router.post('/accessories/:id/adjust',
+  authorize('admin', 'manager', 'warehouse'),  accessoryAdjust);
+router.get('/accessories/:id/movements',       getAccessoryMovements);
+
+// ─── Quà tặng (gift-items) ────────────────────────────────────────────────────
+router.get('/gift-items/low-stock',            getGiftLowStock);
+router.get('/gift-items',                      getGiftItems);
+router.get('/gift-items/:id',                  getGiftItemById);
+router.post('/gift-items',
+  authorize('admin', 'manager', 'warehouse'),  createGiftItem);
+router.put('/gift-items/:id',
+  authorize('admin', 'manager', 'warehouse'),  updateGiftItem);
+router.post('/gift-items/:id/stock-in',
+  authorize('admin', 'manager', 'warehouse'),  giftStockIn);
+router.post('/gift-items/:id/stock-out',
+  authorize('admin', 'manager', 'warehouse', 'sales'), giftStockOut);
+router.get('/gift-items/:id/movements',        getGiftMovements);
+
+// ─── Quà tặng theo đơn hàng (order-gifts) ────────────────────────────────────
+router.get('/order-gifts/:order_id',           getOrderGifts);
+router.post('/order-gifts/:order_id',
+  authorize('admin', 'manager', 'sales', 'warehouse'), addOrderGift);
+router.patch('/order-gifts/issue/:id',
+  authorize('admin', 'manager', 'warehouse'),  issueOrderGift);
+
+// ─── CRUD xe (đặt CUỐI để /:id không conflict với /spare-parts, /accessories, v.v.) ──
+router.get('/',       getInventory);
+router.post('/',      addVehicle);
+router.put('/:id',    updateVehicle);
+router.delete('/:id', deleteVehicle);
 
 module.exports = router;
-

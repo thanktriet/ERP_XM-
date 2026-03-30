@@ -124,6 +124,16 @@ body {
 
 .page-content { padding: 24px; flex: 1; }
 
+/* ===== PAGE LAYOUT HELPERS ===== */
+.page-container { padding: 24px; flex: 1; }
+.page-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 20px; gap: 12px; flex-wrap: wrap;
+}
+.page-title { font-size: 22px; font-weight: 700; color: var(--gray-900); margin: 0; }
+.page-subtitle { font-size: 13px; color: var(--gray-500); margin-top: 3px; }
+.form-hint { font-size: 12px; color: var(--gray-400); margin-top: 4px; }
+
 /* ===== CARDS ===== */
 .card {
   background: white;

@@ -17,7 +17,7 @@
 BEGIN;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- BẢNG 1: purchase_orders — Đầu phiếu đơn đặt mua xe
+-- BẢNG 1: purchase_orders — Đầu phiếu đơn đặt mua
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS purchase_orders (
   id                UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -31,21 +31,19 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   -- Nhà cung cấp (bắt buộc)
   supplier_id       UUID          NOT NULL REFERENCES acc_suppliers(id) ON DELETE RESTRICT,
 
+  -- Loại hàng: 1 đơn chỉ nhập 1 loại
+  -- vehicle    → xe máy điện
+  -- spare_part → phụ tùng / linh kiện
+  -- accessory  → phụ kiện bán kèm
+  item_type         TEXT          NOT NULL DEFAULT 'vehicle'
+                    CHECK (item_type IN ('vehicle', 'spare_part', 'accessory')),
+
   -- Ngày tháng
   order_date        DATE          NOT NULL DEFAULT CURRENT_DATE,
-  expected_date     DATE,                         -- Ngày hẹn giao dự kiến
-  actual_date       DATE,                         -- Ngày NCC giao thực tế
+  expected_date     DATE,
+  actual_date       DATE,
 
   -- ── Trạng thái đơn hàng ───────────────────────────────────────────────────
-  -- draft          : Đang soạn, chưa gửi NCC
-  -- submitted      : Đã gửi NCC, chờ xác nhận
-  -- approved       : NCC xác nhận, chờ nhận hàng
-  -- partial_received: Nhận một phần (NCC giao nhiều đợt)
-  -- fully_received : Nhận đủ toàn bộ xe
-  -- invoiced       : Đã có hoá đơn VAT từ NCC
-  -- paid           : Đã thanh toán đủ
-  -- rejected       : NCC từ chối / điều khoản không đạt
-  -- cancelled      : Huỷ đơn (chỉ từ draft/submitted)
   status            TEXT          NOT NULL DEFAULT 'draft'
                     CHECK (status IN (
                       'draft', 'submitted', 'approved',
@@ -55,35 +53,29 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
                     )),
 
   -- ── Tài chính ─────────────────────────────────────────────────────────────
-  subtotal          NUMERIC(18,0) NOT NULL DEFAULT 0,   -- Tổng chưa thuế
-  vat_amount        NUMERIC(18,0) NOT NULL DEFAULT 0,   -- Thuế GTGT đầu vào
-  total_amount      NUMERIC(18,0) NOT NULL DEFAULT 0,   -- Tổng phải trả (= subtotal + vat)
-  paid_amount       NUMERIC(18,0) NOT NULL DEFAULT 0,   -- Đã thanh toán
-  -- Computed: còn lại bao nhiêu chưa trả
+  subtotal          NUMERIC(18,0) NOT NULL DEFAULT 0,
+  vat_amount        NUMERIC(18,0) NOT NULL DEFAULT 0,
+  total_amount      NUMERIC(18,0) NOT NULL DEFAULT 0,
+  paid_amount       NUMERIC(18,0) NOT NULL DEFAULT 0,
   balance_due       NUMERIC(18,0) GENERATED ALWAYS AS
                     (total_amount - paid_amount) STORED,
 
-  -- Điều khoản thanh toán (override từ supplier.payment_terms nếu cần)
-  payment_terms     SMALLINT      DEFAULT 30,            -- Số ngày được nợ
-  payment_due_date  DATE,                               -- Hạn thanh toán cuối
-
-  -- Phương thức thanh toán
+  payment_terms     SMALLINT      DEFAULT 30,
+  payment_due_date  DATE,
   payment_method    TEXT          CHECK (payment_method IN
                     ('cash', 'bank_transfer', 'check', 'mixed')),
 
   -- ── Hoá đơn NCC ──────────────────────────────────────────────────────────
-  -- Sau khi nhận hàng, NCC xuất HĐ GTGT
-  supplier_invoice_number TEXT,                         -- Số HĐ NCC (ký hiệu + số)
+  supplier_invoice_number TEXT,
   supplier_invoice_date   DATE,
-  supplier_invoice_url    TEXT,                         -- URL scan HĐ lên Storage
+  supplier_invoice_url    TEXT,
 
   -- ── Kế toán ───────────────────────────────────────────────────────────────
-  -- acc_voucher_id tự điền khi controller tạo bút toán nhập hàng
   acc_voucher_id    UUID          REFERENCES acc_vouchers(id) ON DELETE SET NULL,
 
   -- ── Thông tin thêm ────────────────────────────────────────────────────────
-  warehouse_note    TEXT,                               -- Ghi chú nhập kho
-  notes             TEXT,                               -- Ghi chú nội bộ
+  warehouse_note    TEXT,
+  notes             TEXT,
   cancel_reason     TEXT,
 
   -- ── Người thực hiện ───────────────────────────────────────────────────────
@@ -95,54 +87,66 @@ CREATE TABLE IF NOT EXISTS purchase_orders (
   created_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
   updated_at        TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
 
-  -- Không cho sửa đơn sau khi đã được duyệt nhận hàng
   CONSTRAINT chk_po_paid_lte_total CHECK (paid_amount <= total_amount)
 );
 
 COMMENT ON TABLE purchase_orders IS
-  'Đơn đặt mua xe từ nhà phân phối / nhà cung cấp. '
-  'Khi status = fully_received: trigger tự tạo acc_voucher (PKN - nhập kho) '
-  'và cập nhật inventory_vehicles. '
-  'Khi status = invoiced: tạo acc_voucher (HDM - hoá đơn mua vào).';
+  'Đơn đặt mua hàng từ nhà cung cấp. '
+  'Mỗi đơn chỉ nhập 1 loại hàng (item_type): xe, phụ tùng hoặc phụ kiện.';
 
 CREATE INDEX IF NOT EXISTS idx_po_supplier    ON purchase_orders(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_po_branch      ON purchase_orders(branch_id);
 CREATE INDEX IF NOT EXISTS idx_po_status      ON purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_po_item_type   ON purchase_orders(item_type);
 CREATE INDEX IF NOT EXISTS idx_po_date        ON purchase_orders(order_date DESC);
 CREATE INDEX IF NOT EXISTS idx_po_due         ON purchase_orders(payment_due_date)
   WHERE status NOT IN ('paid','cancelled','rejected');
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- BẢNG 2: purchase_order_items — Chi tiết từng dòng xe đặt mua
+-- BẢNG 2: purchase_order_items — Chi tiết từng dòng hàng trong đơn
+-- Loại hàng trong dòng phải khớp với item_type của đơn:
+--   item_type = 'vehicle'    → vehicle_model_id NOT NULL
+--   item_type = 'spare_part' → spare_part_id    NOT NULL
+--   item_type = 'accessory'  → accessory_id     NOT NULL
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS purchase_order_items (
   id                    UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
   po_id                 UUID          NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
   line_number           SMALLINT      NOT NULL DEFAULT 1,
 
-  -- Dòng xe cần mua
-  vehicle_model_id      UUID          NOT NULL REFERENCES vehicle_models(id) ON DELETE RESTRICT,
-  color                 TEXT,                           -- Màu sắc đặt
+  -- Loại hàng (khớp với purchase_orders.item_type)
+  item_type             TEXT          NOT NULL DEFAULT 'vehicle'
+                        CHECK (item_type IN ('vehicle', 'spare_part', 'accessory')),
+
+  -- ── Xe (khi item_type = 'vehicle') ────────────────────────────────────────
+  vehicle_model_id      UUID          REFERENCES vehicle_models(id) ON DELETE RESTRICT,
+  color                 TEXT,
   year_manufacture      SMALLINT,
 
+  -- ── Phụ tùng (khi item_type = 'spare_part') ───────────────────────────────
+  spare_part_id         UUID          REFERENCES spare_parts(id)    ON DELETE RESTRICT,
+
+  -- ── Phụ kiện (khi item_type = 'accessory') ────────────────────────────────
+  accessory_id          UUID          REFERENCES accessories(id)    ON DELETE RESTRICT,
+
+  -- Tên dự phòng (hiển thị khi join không có)
+  item_name             TEXT,
+
   -- Số lượng
-  qty_ordered           INT           NOT NULL CHECK (qty_ordered > 0),   -- Số lượng đặt
-  qty_received          INT           NOT NULL DEFAULT 0                   -- Số lượng đã nhận
-                        CHECK (qty_received >= 0),
-  qty_rejected          INT           NOT NULL DEFAULT 0                   -- Số lượng từ chối (lỗi, sai model)
-                        CHECK (qty_rejected >= 0),
-  -- qty_pending = qty_ordered - qty_received - qty_rejected (computed)
+  qty_ordered           INT           NOT NULL CHECK (qty_ordered > 0),
+  qty_received          INT           NOT NULL DEFAULT 0 CHECK (qty_received >= 0),
+  qty_rejected          INT           NOT NULL DEFAULT 0 CHECK (qty_rejected >= 0),
   qty_pending           INT           GENERATED ALWAYS AS
                         (qty_ordered - qty_received - qty_rejected) STORED,
 
   -- Giá
-  unit_cost             NUMERIC(18,0) NOT NULL CHECK (unit_cost > 0),     -- Giá nhập chưa VAT / xe
-  vat_rate              NUMERIC(5,2)  NOT NULL DEFAULT 10.00,              -- % VAT (10%)
+  unit_cost             NUMERIC(18,0) NOT NULL DEFAULT 0 CHECK (unit_cost >= 0),
+  vat_rate              NUMERIC(5,2)  NOT NULL DEFAULT 10.00,
   vat_amount            NUMERIC(18,0) GENERATED ALWAYS AS
                         (ROUND(unit_cost * qty_ordered * vat_rate / 100)) STORED,
   line_total            NUMERIC(18,0) GENERATED ALWAYS AS
-                        (unit_cost * qty_ordered) STORED,                 -- Chưa VAT
+                        (unit_cost * qty_ordered) STORED,
   line_total_with_vat   NUMERIC(18,0) GENERATED ALWAYS AS
                         (ROUND(unit_cost * qty_ordered * (1 + vat_rate / 100))) STORED,
 
@@ -150,16 +154,26 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
   created_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
 
   UNIQUE (po_id, line_number),
-  CONSTRAINT chk_received_lte_ordered CHECK (qty_received + qty_rejected <= qty_ordered)
+  CONSTRAINT chk_received_lte_ordered CHECK (qty_received + qty_rejected <= qty_ordered),
+
+  -- Đảm bảo đúng FK theo item_type
+  CONSTRAINT chk_poi_item_type CHECK (
+    (item_type = 'vehicle'    AND vehicle_model_id IS NOT NULL AND spare_part_id IS NULL AND accessory_id IS NULL) OR
+    (item_type = 'spare_part' AND spare_part_id IS NOT NULL    AND vehicle_model_id IS NULL AND accessory_id IS NULL) OR
+    (item_type = 'accessory'  AND accessory_id  IS NOT NULL    AND vehicle_model_id IS NULL AND spare_part_id IS NULL)
+  )
 );
 
 COMMENT ON TABLE purchase_order_items IS
-  'Từng dòng xe trong đơn đặt mua. '
-  'qty_pending = số xe chưa giao — dùng để theo dõi NCC giao từng đợt. '
-  'qty_rejected = xe bị trả lại (sai model, lỗi kỹ thuật).';
+  'Từng dòng hàng trong đơn đặt mua. '
+  'Loại hàng (item_type) phải khớp với đơn: xe → vehicle_model_id, '
+  'phụ tùng → spare_part_id, phụ kiện → accessory_id.';
 
 CREATE INDEX IF NOT EXISTS idx_poi_po           ON purchase_order_items(po_id);
-CREATE INDEX IF NOT EXISTS idx_poi_model        ON purchase_order_items(vehicle_model_id);
+CREATE INDEX IF NOT EXISTS idx_poi_item_type    ON purchase_order_items(item_type);
+CREATE INDEX IF NOT EXISTS idx_poi_model        ON purchase_order_items(vehicle_model_id)  WHERE vehicle_model_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_poi_spare_part   ON purchase_order_items(spare_part_id)     WHERE spare_part_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_poi_accessory    ON purchase_order_items(accessory_id)      WHERE accessory_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_poi_pending      ON purchase_order_items(qty_pending)
   WHERE qty_pending > 0;
 
@@ -209,8 +223,7 @@ CREATE INDEX IF NOT EXISTS idx_pr_status ON purchase_receipts(status);
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- BẢNG 4: purchase_receipt_items — Chi tiết từng xe trong phiếu nhận hàng
--- Mỗi xe nhận vào → 1 dòng → gắn với inventory_vehicles sau khi accepted
+-- BẢNG 4: purchase_receipt_items — Chi tiết từng dòng hàng trong phiếu nhận
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS purchase_receipt_items (
   id                    UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -218,25 +231,28 @@ CREATE TABLE IF NOT EXISTS purchase_receipt_items (
   po_item_id            UUID          NOT NULL REFERENCES purchase_order_items(id) ON DELETE RESTRICT,
   line_number           SMALLINT      NOT NULL DEFAULT 1,
 
-  -- Thông tin xe thực nhận (điền khi xe đến)
-  vin                   TEXT,                           -- Số khung (scan từ xe)
-  engine_number         TEXT,                           -- Số máy / motor
-  battery_serial        TEXT,                           -- Số serial pin
+  -- Loại hàng (copy từ PO item để dễ xử lý trong trigger)
+  item_type             TEXT          NOT NULL DEFAULT 'vehicle'
+                        CHECK (item_type IN ('vehicle', 'spare_part', 'accessory')),
+
+  -- ── Xe: điền khi scan thực tế ────────────────────────────────────────────
+  vin                   TEXT,
+  engine_number         TEXT,
+  battery_serial        TEXT,
   color                 TEXT,
   year_manufacture      SMALLINT,
 
+  -- ── Phụ tùng / phụ kiện: số lượng thực nhận ─────────────────────────────
+  qty_received          INT           DEFAULT 1 CHECK (qty_received > 0),
+
   -- Kết quả kiểm hàng
-  -- ok       : Xe đạt chất lượng, nhập kho
-  -- defect   : Lỗi nhẹ, chấp nhận nhập kho nhưng ghi chú
-  -- rejected : Lỗi nặng / sai model, trả NCC
   condition             TEXT          NOT NULL DEFAULT 'ok'
                         CHECK (condition IN ('ok','defect','rejected')),
-  defect_notes          TEXT,                           -- Mô tả lỗi nếu defect/rejected
+  defect_notes          TEXT,
 
-  -- Sau khi accepted: gắn với bản ghi inventory_vehicles
+  -- Sau khi accepted xe: gắn inventory_vehicle_id
   inventory_vehicle_id  UUID          REFERENCES inventory_vehicles(id) ON DELETE SET NULL,
 
-  -- Giá nhập thực tế (có thể khác PO nếu NCC điều chỉnh)
   actual_unit_cost      NUMERIC(18,0),
 
   created_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
@@ -244,9 +260,9 @@ CREATE TABLE IF NOT EXISTS purchase_receipt_items (
 );
 
 COMMENT ON TABLE purchase_receipt_items IS
-  'Chi tiết từng xe trong phiếu nhận hàng. '
-  'Sau khi accepted: inventory_vehicle_id được gắn vào bản ghi xe trong kho. '
-  'vin, engine_number, battery_serial điền khi scan xe thực tế.';
+  'Chi tiết từng dòng hàng trong phiếu nhận. '
+  'Xe: điền VIN/số máy. Phụ tùng/phụ kiện: điền qty_received. '
+  'Sau khi accepted: xe → inventory_vehicles, phụ tùng → stock_movements.';
 
 CREATE INDEX IF NOT EXISTS idx_pri_receipt ON purchase_receipt_items(receipt_id);
 CREATE INDEX IF NOT EXISTS idx_pri_po_item ON purchase_receipt_items(po_item_id);
@@ -360,36 +376,46 @@ CREATE TRIGGER trg_po_payment_number
   EXECUTE FUNCTION fn_generate_po_payment_number();
 
 
--- ─── Trigger 4: Khi receipt accepted → tạo inventory_vehicles + cập nhật PO ─
+-- ─── Trigger 4: Khi receipt accepted → nhập kho theo loại hàng ──────────────
+-- • Xe (vehicle)    → tạo inventory_vehicles
+-- • Phụ tùng        → insert stock_movements (import) → trigger tự cộng qty_in_stock
+-- • Phụ kiện        → ghi nhận (chưa có bảng stock riêng, bỏ qua cộng kho)
 CREATE OR REPLACE FUNCTION fn_receipt_accepted()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
 DECLARE
-  v_item          RECORD;
-  v_vehicle_id    UUID;
-  v_po            RECORD;
-  v_total_ordered INT;
+  v_item           RECORD;
+  v_vehicle_id     UUID;
+  v_total_ordered  INT;
   v_total_received INT;
+  v_qty_in         INT;
 BEGIN
   -- Chỉ xử lý khi chuyển sang accepted
   IF NOT (NEW.status = 'accepted' AND OLD.status != 'accepted') THEN
     RETURN NEW;
   END IF;
 
-  -- Duyệt từng xe trong phiếu nhận
+  -- Duyệt từng dòng trong phiếu nhận
   FOR v_item IN
-    SELECT pri.*, poi.vehicle_model_id, poi.unit_cost, po.branch_id
+    SELECT
+      pri.*,
+      poi.item_type,
+      poi.vehicle_model_id,
+      poi.spare_part_id,
+      poi.accessory_id,
+      poi.unit_cost,
+      po.branch_id
     FROM   purchase_receipt_items pri
     JOIN   purchase_order_items   poi ON poi.id = pri.po_item_id
     JOIN   purchase_orders        po  ON po.id  = NEW.po_id
     WHERE  pri.receipt_id = NEW.id
-      AND  pri.condition  IN ('ok','defect')   -- Bỏ qua xe bị rejected
+      AND  pri.condition  IN ('ok','defect')
   LOOP
-    -- Tạo bản ghi kho cho từng xe (nếu chưa có)
-    IF v_item.inventory_vehicle_id IS NULL THEN
+
+    -- ── Xe: tạo inventory_vehicles ────────────────────────────────────────
+    IF v_item.item_type = 'vehicle' AND v_item.inventory_vehicle_id IS NULL THEN
       INSERT INTO inventory_vehicles
         (vehicle_model_id, vin, engine_number, battery_serial, color,
-         year_manufacture, status, import_date,
-         import_price, notes)
+         year_manufacture, status, import_date, import_price, notes)
       VALUES
         (v_item.vehicle_model_id,
          v_item.vin,
@@ -400,28 +426,57 @@ BEGIN
          'in_stock',
          NEW.receipt_date,
          COALESCE(v_item.actual_unit_cost, v_item.unit_cost),
-         CASE v_item.condition WHEN 'defect'
-           THEN 'Nhập kho có lỗi: ' || COALESCE(v_item.defect_notes, '')
-           ELSE NULL END)
+         CASE v_item.condition
+           WHEN 'defect' THEN 'Nhập kho có lỗi: ' || COALESCE(v_item.defect_notes, '')
+           ELSE NULL
+         END)
       RETURNING id INTO v_vehicle_id;
 
-      -- Gắn inventory_vehicle_id vào receipt item
       UPDATE purchase_receipt_items
       SET    inventory_vehicle_id = v_vehicle_id
       WHERE  id = v_item.id;
-    END IF;
 
-    -- Tăng qty_received trên PO item
-    UPDATE purchase_order_items
-    SET    qty_received = qty_received + 1
-    WHERE  id = v_item.po_item_id;
-
-    -- Tăng qty_rejected nếu condition = rejected (xe bị trả)
-    IF v_item.condition = 'rejected' THEN
       UPDATE purchase_order_items
-      SET    qty_rejected = qty_rejected + 1
+      SET    qty_received = qty_received + 1
       WHERE  id = v_item.po_item_id;
     END IF;
+
+    -- ── Phụ tùng: ghi stock_movements → trigger tự cộng qty_in_stock ─────
+    IF v_item.item_type = 'spare_part' AND v_item.spare_part_id IS NOT NULL THEN
+      v_qty_in := COALESCE(v_item.qty_received, 1);
+
+      -- Lấy qty hiện tại để ghi quantity_before
+      DECLARE v_qty_before INT;
+      BEGIN
+        SELECT qty_in_stock INTO v_qty_before
+        FROM   spare_parts WHERE id = v_item.spare_part_id;
+
+        INSERT INTO stock_movements
+          (spare_part_id, movement_type, quantity,
+           quantity_before, quantity_after,
+           reference_id, reference_type, notes, created_by)
+        VALUES
+          (v_item.spare_part_id, 'import', v_qty_in,
+           v_qty_before, v_qty_before + v_qty_in,
+           NEW.po_id, 'purchase_order',
+           'Nhập từ đơn mua ' || (SELECT po_number FROM purchase_orders WHERE id = NEW.po_id),
+           NEW.received_by);
+
+        -- Cập nhật qty_received trên PO item
+        UPDATE purchase_order_items
+        SET    qty_received = qty_received + v_qty_in
+        WHERE  id = v_item.po_item_id;
+      END;
+    END IF;
+
+    -- ── Phụ kiện: chỉ cập nhật qty_received (chưa có stock table riêng) ──
+    IF v_item.item_type = 'accessory' THEN
+      v_qty_in := COALESCE(v_item.qty_received, 1);
+      UPDATE purchase_order_items
+      SET    qty_received = qty_received + v_qty_in
+      WHERE  id = v_item.po_item_id;
+    END IF;
+
   END LOOP;
 
   -- Kiểm tra PO đã nhận đủ chưa → cập nhật status PO

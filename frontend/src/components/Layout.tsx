@@ -4,41 +4,58 @@ import { useAuthStore } from '../store/authStore';
 import { getInitials } from '../utils/helpers';
 import toast from 'react-hot-toast';
 
-const NAV = [
-  {
-    section: 'Tổng quan',
-    items: [{ to: '/', label: 'Dashboard', icon: '📊' }],
-  },
-  {
-    section: 'Kinh doanh',
-    items: [
-      { to: '/customers', label: 'Khách hàng', icon: '👥' },
-      { to: '/sales', label: 'Đơn hàng', icon: '🛒' },
-    ],
-  },
-  {
-    section: 'Kho & Xe',
-    items: [
-      { to: '/vehicles', label: 'Mẫu xe', icon: '🏍️' },
-      { to: '/inventory', label: 'Tồn kho', icon: '📦' },
-    ],
-  },
-  {
-    section: 'Dịch vụ',
-    items: [
-      { to: '/warranty', label: 'Bảo hành', icon: '🛡️' },
-      { to: '/services', label: 'Phiếu dịch vụ', icon: '🔧' },
-    ],
-  },
-  {
-    section: 'Tài chính',
-    items: [{ to: '/finance', label: 'Thu chi', icon: '💰' }],
-  },
-];
-
 export default function Layout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
+  const laAdminOrManager = user?.role === 'admin' || user?.role === 'manager';
+
+  // Nav động theo quyền
+  const NAV = [
+    {
+      section: 'Tổng quan',
+      items: [{ to: '/', label: 'Dashboard', icon: '📊' }],
+    },
+    {
+      section: 'Kinh doanh',
+      items: [
+        { to: '/customers', label: 'Khách hàng', icon: '👥' },
+        { to: '/sales', label: 'Đơn hàng', icon: '🛒' },
+      ],
+    },
+    {
+      section: 'Kho & Xe',
+      items: [
+        { to: '/vehicles', label: 'Mẫu xe', icon: '🏍️' },
+        { to: '/inventory', label: 'Tồn kho xe', icon: '📦' },
+        { to: '/spare-parts', label: 'Phụ tùng', icon: '🔩' },
+        { to: '/accessories', label: 'Phụ kiện', icon: '🎒' },
+        { to: '/gifts', label: 'Quà tặng', icon: '🎁' },
+        { to: '/purchase-orders', label: 'Đơn nhập hàng', icon: '📋' },
+        { to: '/suppliers', label: 'Nhà cung cấp', icon: '🏭' },
+      ],
+    },
+    {
+      section: 'Dịch vụ',
+      items: [
+        { to: '/warranty', label: 'Bảo hành', icon: '🛡️' },
+        { to: '/services', label: 'Phiếu dịch vụ', icon: '🔧' },
+      ],
+    },
+    {
+      section: 'Tài chính',
+      items: [
+        { to: '/finance', label: 'Thu chi', icon: '💰' },
+        { to: '/accounting/cashflow', label: 'Tồn quỹ', icon: '🏦' },
+      ],
+    },
+    // Quản trị: chỉ hiện với admin/manager
+    ...(laAdminOrManager ? [{
+      section: 'Quản trị',
+      items: [
+        { to: '/users', label: 'Nhân viên', icon: '👤' },
+      ],
+    }] : []),
+  ];
 
   const handleLogout = () => {
     logout();

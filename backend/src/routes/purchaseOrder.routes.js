@@ -1,80 +1,62 @@
 const router = require('express').Router();
 const {
+  getSuppliers, createSupplier, updateSupplier, toggleSupplier,
   getPurchaseOrders,
-  getActionRequired,
   getPurchaseOrderDetail,
   createPurchaseOrder,
   updatePurchaseOrder,
   updatePOStatus,
   createReceipt,
-  addReceiptItems,
   acceptReceipt,
   getReceiptDetail,
   createPayment,
-  getMonthlySummary,
+  getActionRequired,
 } = require('../controllers/purchaseOrder.controller');
-
 const { authenticate, authorize } = require('../middleware/auth.middleware');
-const { validate }                 = require('../middleware/validate.middleware');
-const {
-  createPORules,
-  updatePORules,
-  createPOItemRules,
-  createReceiptRules,
-  acceptReceiptRules,
-  createPaymentRules,
-  listPOQueryRules,
-} = require('../validators/purchaseOrder.validator');
 
 router.use(authenticate);
 
-// ─── Đơn nhập hàng ────────────────────────────────────────────────────────────
-// Các route cố định đặt TRƯỚC /:id để tránh conflict
-router.get('/action-required', getActionRequired);
-router.get('/monthly-summary', authorize('admin','manager','accountant'), getMonthlySummary);
+// ─── Nhà cung cấp — đặt TRƯỚC /:id để tránh conflict ────────────────────────
+router.get('/suppliers',    getSuppliers);
+router.post('/suppliers',   authorize('admin', 'manager', 'accountant'), createSupplier);
+router.put('/suppliers/:id',    authorize('admin', 'manager', 'accountant'), updateSupplier);
+router.patch('/suppliers/:id',  authorize('admin', 'manager', 'accountant'), toggleSupplier);
 
-router.get('/',
-  listPOQueryRules, validate,
-  getPurchaseOrders);
+router.get('/action-required', getActionRequired);
+
+// ─── Đơn nhập hàng ────────────────────────────────────────────────────────────
+router.get('/',  getPurchaseOrders);
 
 router.post('/',
-  authorize('admin','manager','warehouse'),
-  createPORules, validate,
+  authorize('admin', 'manager', 'warehouse'),
   createPurchaseOrder);
 
-router.get('/:id',           getPurchaseOrderDetail);
+router.get('/:id',  getPurchaseOrderDetail);
 
 router.put('/:id',
-  authorize('admin','manager','warehouse'),
-  updatePORules, validate,
+  authorize('admin', 'manager', 'warehouse'),
   updatePurchaseOrder);
 
 router.patch('/:id/status',
-  authorize('admin','manager','warehouse'),
+  authorize('admin', 'manager', 'warehouse'),
   updatePOStatus);
-
-// ─── Thanh toán NCC ───────────────────────────────────────────────────────────
-router.post('/:id/payments',
-  authorize('admin','manager','accountant'),
-  createPaymentRules, validate,
-  createPayment);
 
 // ─── Phiếu nhận hàng ──────────────────────────────────────────────────────────
 router.post('/:id/receipts',
-  authorize('admin','manager','warehouse'),
-  createReceiptRules, validate,
+  authorize('admin', 'manager', 'warehouse'),
   createReceipt);
 
-// Routes phiếu nhận dùng /receipts/:receiptId (không dùng /:id để tránh nhầm)
-router.get('/receipts/:receiptId',    getReceiptDetail);
-
-router.post('/receipts/:receiptId/items',
-  authorize('admin','manager','warehouse'),
-  addReceiptItems);
+// Route phiếu nhận dùng /receipts/:receiptId (tránh nhầm với /:id)
+router.get('/receipts/:receiptId',
+  getReceiptDetail);
 
 router.patch('/receipts/:receiptId/accept',
-  authorize('admin','manager','warehouse'),
-  acceptReceiptRules, validate,
+  authorize('admin', 'manager', 'warehouse'),
   acceptReceipt);
+
+// ─── Thanh toán NCC ───────────────────────────────────────────────────────────
+router.post('/:id/payments',
+  authorize('admin', 'manager', 'accountant'),
+  createPayment);
 
 module.exports = router;

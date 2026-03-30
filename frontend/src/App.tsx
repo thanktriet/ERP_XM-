@@ -14,6 +14,14 @@ import InventoryPage from './pages/InventoryPage';
 import WarrantyPage from './pages/WarrantyPage';
 import FinancePage from './pages/FinancePage';
 import SalesNewPage from './pages/SalesNewPage';
+import UsersPage from './pages/UsersPage';
+import SparePartsPage from './pages/SparePartsPage';
+import AccessoriesPage from './pages/AccessoriesPage';
+import GiftsPage from './pages/GiftsPage';
+import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
+import SuppliersPage from './pages/SuppliersPage';
+import PaymentPage from './pages/PaymentPage';
+import CashflowPage from './pages/CashflowPage';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -50,9 +58,18 @@ export default function App() {
             <Route path="sales/new" element={<SalesNewPage />} />
             <Route path="vehicles" element={<VehiclesPage />} />
             <Route path="inventory" element={<InventoryPage />} />
+            <Route path="spare-parts" element={<SparePartsPage />} />
+            <Route path="accessories" element={<AccessoriesPage />} />
+            <Route path="gifts" element={<GiftsPage />} />
+            <Route path="purchase-orders" element={<PurchaseOrdersPage />} />
+            <Route path="suppliers" element={<SuppliersPage />} />
             <Route path="warranty" element={<WarrantyPage />} />
             <Route path="services" element={<WarrantyPage />} />
             <Route path="finance" element={<FinancePage />} />
+            <Route path="users" element={<UsersPage />} />
+            {/* Module kế toán */}
+            <Route path="payment/:orderId" element={<PaymentPage />} />
+            <Route path="accounting/cashflow" element={<CashflowPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
@@ -61,3 +78,4 @@ export default function App() {
     </QueryClientProvider>
   );
 }
+

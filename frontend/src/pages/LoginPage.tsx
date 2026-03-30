@@ -4,6 +4,21 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/authStore';
 import toast from 'react-hot-toast';
 
+function thongBaoLoiDangNhap(err: unknown): string {
+  const e = err as { response?: { status?: number; data?: { error?: string } }; message?: string };
+  if (!e?.response) {
+    return 'Không kết nối được API. Trên GitHub Pages cần cấu hình secret VITE_API_BASE_URL trỏ tới backend (và backend phải bật CORS cho domain Pages).';
+  }
+  const st = e.response.status;
+  const msg = e.response.data?.error;
+  if (msg) return msg;
+  if (st === 404) {
+    return 'Không tìm thấy API (404). Kiểm tra VITE_API_BASE_URL khi build — không dùng được đường dẫn /api trên github.io.';
+  }
+  if (st !== undefined && st >= 500) return 'Lỗi máy chủ. Thử lại sau.';
+  return 'Email hoặc mật khẩu không đúng';
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -16,8 +31,8 @@ export default function LoginPage() {
       await login(email, password);
       toast.success('Đăng nhập thành công!');
       navigate('/');
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || 'Email hoặc mật khẩu không đúng');
+    } catch (err: unknown) {
+      toast.error(thongBaoLoiDangNhap(err));
     }
   };
 

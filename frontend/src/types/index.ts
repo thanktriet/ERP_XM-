@@ -7,6 +7,8 @@ export interface User {
   role: 'admin' | 'manager' | 'sales' | 'technician' | 'accountant' | 'warehouse';
   is_active: boolean;
   avatar_url?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Customer {
@@ -185,4 +187,66 @@ export interface SalesOrderAccessory {
   line_total:   number;
   created_at:   string;
   accessories?: Pick<Accessory, 'id' | 'code' | 'name' | 'category' | 'image_url' | 'unit' | 'price'>;
+}
+
+// ─── Đơn nhập hàng ────────────────────────────────────────────────────────────
+export interface PurchaseOrder {
+  id: string;
+  po_number: string;
+  supplier_name: string;
+  supplier_phone?: string;
+  order_date: string;
+  expected_date?: string;
+  received_date?: string;
+  status: 'draft' | 'confirmed' | 'received' | 'cancelled';
+  subtotal: number;
+  notes?: string;
+  created_at: string;
+  users?: { full_name: string };
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  po_id: string;
+  vehicle_model_id?: string;
+  color?: string;
+  year_manufacture?: number;
+  qty_ordered: number;
+  qty_received: number;
+  unit_cost: number;
+  line_total: number;
+  notes?: string;
+  vehicle_models?: Pick<VehicleModel, 'id' | 'brand' | 'model_name' | 'category'>;
+}
+
+// ─── Phụ tùng mở rộng ─────────────────────────────────────────────────────────
+export interface SparePart {
+  id: string;
+  code: string;
+  name: string;
+  category?: string;
+  unit: string;
+  qty_in_stock: number;
+  qty_minimum: number;
+  price_cost: number;
+  price_sell: number;
+  supplier?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface StockMovement {
+  id: string;
+  spare_part_id: string;
+  movement_type: 'import' | 'export' | 'adjustment';
+  quantity: number;
+  quantity_before: number;
+  quantity_after: number;
+  reference_id?: string;
+  reference_type?: string;
+  notes?: string;
+  created_by?: string;
+  created_at: string;
+  users?: { full_name: string };
 }
