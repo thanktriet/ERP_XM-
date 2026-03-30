@@ -225,6 +225,9 @@ const createOrder = async (req, res) => {
       customer_id, salesperson_id, items, accessories = [],
       discount_amount = 0, payment_method, deposit_amount = 0,
       delivery_date, delivery_address, notes,
+      promotions = [],   // [{ promotion_id, promo_name, promo_type, discount_amount, gift_item_id, gift_item_name, gift_quantity }]
+      fees = [],         // [{ fee_key, fee_label, amount }]
+      services = [],     // [{ service_id, service_name, price }]
     } = req.body;
 
     // Tính tổng tiền xe
@@ -243,7 +246,11 @@ const createOrder = async (req, res) => {
     );
     subtotal += accessoriesSubtotal;
 
-    const total_amount = subtotal - discount_amount;
+    // Cộng phí & dịch vụ
+    const feesTotal    = fees.reduce((s, f) => s + (Number(f.amount) || 0), 0);
+    const servicesTotal = services.reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+
+    const total_amount = subtotal - discount_amount + feesTotal + servicesTotal;
 
     // Sinh mã đơn hàng dựa trên bản ghi mới nhất
     const { data: lastOrder } = await supabaseAdmin
@@ -295,6 +302,30 @@ const createOrder = async (req, res) => {
         .from('sales_order_accessories')
         .insert(accessoryRows);
       if (accErr) console.error('⚠️ Lưu phụ kiện thất bại:', accErr.message);
+    }
+
+    // Khuyến mãi áp dụng
+    if (promotions.length > 0) {
+      const promoRows = promotions.map(p => ({ ...p, order_id: order.id }));
+      const { error: promoErr } = await supabaseAdmin
+        .from('sales_order_promotions').insert(promoRows);
+      if (promoErr) console.error('⚠️ Lưu khuyến mãi thất bại:', promoErr.message);
+    }
+
+    // Phí cố định
+    if (fees.length > 0) {
+      const feeRows = fees.map(f => ({ ...f, order_id: order.id }));
+      const { error: feeErr } = await supabaseAdmin
+        .from('sales_order_fees').insert(feeRows);
+      if (feeErr) console.error('⚠️ Lưu phí thất bại:', feeErr.message);
+    }
+
+    // Dịch vụ đăng ký
+    if (services.length > 0) {
+      const svcRows = services.map(s => ({ ...s, order_id: order.id }));
+      const { error: svcErr } = await supabaseAdmin
+        .from('sales_order_services').insert(svcRows);
+      if (svcErr) console.error('⚠️ Lưu dịch vụ thất bại:', svcErr.message);
     }
 
     // Đặt trước xe (reserved) — chưa bán hẳn, chờ confirmed
@@ -352,7 +383,10 @@ const getOrderDetail = async (req, res) => {
           inventory_vehicles(vin, color),
           vehicle_models(brand, model_name, image_url, warranty_months)
         ),
-        sales_order_accessories(*, accessories(id, code, name, category, image_url, unit, price_sell))
+        sales_order_accessories(*, accessories(id, code, name, category, image_url, unit, price_sell)),
+        sales_order_promotions(*),
+        sales_order_fees(*),
+        sales_order_services(*)
       `)
       .eq('id', id)
       .single();

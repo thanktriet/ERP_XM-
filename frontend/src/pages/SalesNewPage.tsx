@@ -390,6 +390,34 @@ export default function SalesNewPage() {
         quantity:     i.quantity,
         unit_price:   i.unit_price,
       })),
+      // Khuyến mãi được chọn
+      promotions: khuyenMai
+        .filter(k => k._checked)
+        .map(k => ({
+          promotion_id:    k.id,
+          promo_name:      k.name,
+          promo_type:      k.promo_type,
+          discount_amount: k.promo_type === 'percent'
+            ? giaNiemYet * k.discount_percent / 100
+            : k.promo_type === 'fixed' ? k.discount_amount : 0,
+          gift_item_id:   k.gift_items?.id   ?? null,
+          gift_item_name: k.gift_items?.name ?? null,
+          gift_quantity:  k.gift_quantity ?? 0,
+        })),
+      // Phí cố định đang bật
+      fees: dsFees.map(f => ({
+        fee_key:   f.key,
+        fee_label: f.label,
+        amount:    f.amount,
+      })),
+      // Dịch vụ đăng ký đã chọn
+      services: dsDichVu
+        .filter(s => dichVuChon.has(s.id))
+        .map(s => ({
+          service_id:   s.id,
+          service_name: s.name,
+          price:        s.price,
+        })),
     };
   };
 

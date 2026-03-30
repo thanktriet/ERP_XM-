@@ -413,6 +413,87 @@ export default function SalesPage() {
                   </>
                 )}
 
+                {/* ── Khuyến mãi ── */}
+                {(detail.sales_order_promotions ?? []).length > 0 && (
+                  <>
+                    <p className="form-section-title">Chương trình khuyến mãi</p>
+                    <div className="table-wrap" style={{ marginBottom: 0 }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Tên chương trình</th>
+                            <th>Loại</th>
+                            <th style={{ textAlign: 'right' }}>Ưu đãi</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detail.sales_order_promotions.map((p: any) => (
+                            <tr key={p.id}>
+                              <td className="fw-600">{p.promo_name}</td>
+                              <td>
+                                <span style={{
+                                  background: p.promo_type === 'percent' ? '#dbeafe'
+                                    : p.promo_type === 'fixed' ? '#dcfce7'
+                                    : '#ede9fe',
+                                  color: p.promo_type === 'percent' ? '#1d4ed8'
+                                    : p.promo_type === 'fixed' ? '#15803d'
+                                    : '#6d28d9',
+                                  padding: '2px 8px', borderRadius: 999, fontSize: 12,
+                                }}>
+                                  {p.promo_type === 'percent' ? 'Giảm %'
+                                    : p.promo_type === 'fixed' ? 'Giảm tiền'
+                                    : p.promo_type === 'gift'  ? 'Quà tặng'
+                                    : 'Combo'}
+                                </span>
+                              </td>
+                              <td style={{ textAlign: 'right' }}>
+                                {(p.promo_type === 'gift' || p.promo_type === 'combo')
+                                  ? <span style={{ color: '#6d28d9' }}>🎁 {p.gift_item_name} ×{p.gift_quantity}</span>
+                                  : <span className="text-danger fw-600">-{formatCurrency(p.discount_amount)}</span>
+                                }
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                {/* ── Phí & Dịch vụ ── */}
+                {((detail.sales_order_fees ?? []).length > 0 || (detail.sales_order_services ?? []).length > 0) && (
+                  <>
+                    <p className="form-section-title">Phí & Dịch vụ đăng ký</p>
+                    <div className="table-wrap" style={{ marginBottom: 0 }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Nội dung</th>
+                            <th>Loại</th>
+                            <th style={{ textAlign: 'right' }}>Số tiền</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(detail.sales_order_fees ?? []).map((f: any) => (
+                            <tr key={f.id}>
+                              <td className="fw-600">{f.fee_label}</td>
+                              <td><span style={{ background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: 999, fontSize: 12 }}>Phí</span></td>
+                              <td style={{ textAlign: 'right' }} className="fw-600">{formatCurrency(f.amount)}</td>
+                            </tr>
+                          ))}
+                          {(detail.sales_order_services ?? []).map((s: any) => (
+                            <tr key={s.id}>
+                              <td className="fw-600">{s.service_name}</td>
+                              <td><span style={{ background: '#e0e7ff', color: '#3730a3', padding: '2px 8px', borderRadius: 999, fontSize: 12 }}>Dịch vụ</span></td>
+                              <td style={{ textAlign: 'right' }} className="fw-600">{formatCurrency(s.price)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
                 {/* ── Tổng tiền ── */}
                 <p className="form-section-title">Thanh toán</p>
                 <div className="order-detail-payment">
