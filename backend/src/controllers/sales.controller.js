@@ -352,7 +352,7 @@ const getOrderDetail = async (req, res) => {
           inventory_vehicles(vin, color),
           vehicle_models(brand, model_name, image_url, warranty_months)
         ),
-        sales_order_accessories(*, accessories(id, code, name, category, image_url, unit, price))
+        sales_order_accessories(*, accessories(id, code, name, category, image_url, unit, price_sell))
       `)
       .eq('id', id)
       .single();

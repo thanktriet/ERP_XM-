@@ -27,7 +27,7 @@ const POI_SELECT = `
   *,
   vehicle_models ( id, brand, model_name, category, image_url, price_cost ),
   spare_parts    ( id, code, name, unit, price_cost ),
-  accessories    ( id, code, name, unit, price )
+  accessories    ( id, code, name, unit, price_sell )
 `;
 
 // ─── Danh sách nhà cung cấp (cho dropdown frontend) ──────────────────────────
