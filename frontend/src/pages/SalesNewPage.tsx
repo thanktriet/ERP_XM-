@@ -8,7 +8,7 @@ import api from '../services/api';
 type PromoInPOS = import('../types').Promotion & { _checked: boolean };
 import { formatCurrency, getInitials } from '../utils/helpers';
 import { useAuthStore } from '../store/authStore';
-import type { Customer, VehicleModel, InventoryVehicle, Accessory, CartAccessory, Promotion } from '../types';
+import type { Customer, VehicleModel, InventoryVehicle, Accessory, CartAccessory, Promotion, FeeSetting, RegistrationService } from '../types';
 import toast from 'react-hot-toast';
 import './SalesNewPage.css';
 
@@ -28,8 +28,6 @@ interface FormKhachMoi {
 }
 
 // ─── Hằng số ─────────────────────────────────────────────────────────────────
-const PHI_TRUOC_BA = 500_000;
-
 const KHUYEN_MAI_MAC_DINH: PromoInPOS[] = [];
 
 const NGAY_HIEN_TAI = new Date().toISOString().split('T')[0];
@@ -87,6 +85,9 @@ export default function SalesNewPage() {
   const [gioPhKien, setGioPhKien]             = useState<CartAccessory[]>([]);
   const [filterCatPK, setFilterCatPK]         = useState<string>('');
 
+  // ── Dịch vụ đăng ký (tick chọn) ──────────────────────────────────────────
+  const [dichVuChon, setDichVuChon]           = useState<Set<string>>(new Set());
+
   // ── Bước 5: Ghi chú & giao hàng ─────────────────────────────────────────
   const [ghiChu, setGhiChu]                   = useState('');
   const [ngayGiao, setNgayGiao]               = useState('');
@@ -140,6 +141,26 @@ export default function SalesNewPage() {
       }).then(r => r.data),
     staleTime: 60_000,
   });
+
+  // Phí cố định từ API (is_active = true)
+  const { data: feesData } = useQuery<{ data: FeeSetting[] }>({
+    queryKey: ['fee-settings-pos'],
+    queryFn:  () => api.get('/settings/fees').then(r => r.data),
+    staleTime: 300_000,
+  });
+  const dsFees = feesData?.data ?? [];
+  const tongPhi = dsFees.reduce((s, f) => s + f.amount, 0);
+
+  // Dịch vụ đăng ký từ API
+  const { data: svcData } = useQuery<{ data: RegistrationService[] }>({
+    queryKey: ['reg-services-pos'],
+    queryFn:  () => api.get('/settings/services').then(r => r.data),
+    staleTime: 300_000,
+  });
+  const dsDichVu = svcData?.data ?? [];
+  const tongDichVu = dsDichVu
+    .filter(s => dichVuChon.has(s.id))
+    .reduce((s, sv) => s + sv.price, 0);
 
   // Cập nhật danh sách KM khi model thay đổi, giữ lại trạng thái _checked
   useEffect(() => {
@@ -203,7 +224,7 @@ export default function SalesNewPage() {
     [gioPhKien],
   );
 
-  const tongThanhToan = Math.max(0, giaNiemYet + tongGiamGia + PHI_TRUOC_BA + tongPhKien);
+  const tongThanhToan = Math.max(0, giaNiemYet + tongGiamGia + tongPhi + tongPhKien + tongDichVu);
 
   const datCocNum    = parseInt(datCoc.replace(/\D/g, '') || '0', 10);
   const conLaiNum    = Math.max(0, tongThanhToan - datCocNum);
@@ -770,6 +791,47 @@ export default function SalesNewPage() {
             </div>
           </div>
 
+          {/* ── Card Dịch vụ đăng ký ── */}
+          <div className="pos-card pos-card-mt">
+            <div className="pos-card-header">
+              <span className="pos-step-badge">5</span>
+              <span className="pos-card-title">Dịch Vụ Đăng Ký</span>
+              {dichVuChon.size > 0 && (
+                <span className="badge badge-blue" style={{ fontSize: 11 }}>
+                  {dichVuChon.size} đã chọn · +{formatCurrency(tongDichVu)}
+                </span>
+              )}
+            </div>
+            <div className="pos-card-body">
+              {dsDichVu.length === 0 ? (
+                <div className="pos-km-empty">Chưa có dịch vụ nào — thêm tại trang Cấu hình</div>
+              ) : dsDichVu.map(sv => {
+                const checked = dichVuChon.has(sv.id);
+                return (
+                  <div key={sv.id} className={`pos-km-row${checked ? ' checked' : ''}`}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setDichVuChon(prev => {
+                      const next = new Set(prev);
+                      next.has(sv.id) ? next.delete(sv.id) : next.add(sv.id);
+                      return next;
+                    })}
+                  >
+                    <input type="checkbox" className="pos-km-check" readOnly checked={checked} />
+                    <span className="pos-km-ten">
+                      {sv.name}
+                      {sv.description && (
+                        <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>— {sv.description}</span>
+                      )}
+                    </span>
+                    <span className="pos-km-gia" style={{ color: '#6366f1', minWidth: 90, textAlign: 'right' }}>
+                      +{formatCurrency(sv.price)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* ── Card 2b: Phụ Kiện Bán Kèm ── */}
           <div className="pos-card pos-card-mt">
             <div className="pos-card-header">
@@ -987,10 +1049,20 @@ export default function SalesNewPage() {
                     <span>{formatCurrency(tongGiamGia)}</span>
                   </div>
                 )}
-                <div className="pos-price-row">
-                  <span>Phí trước bạ &amp; biển số</span>
-                  <span>{formatCurrency(PHI_TRUOC_BA)}</span>
-                </div>
+                {/* Phí cố định từ API */}
+                {dsFees.map(f => (
+                  <div key={f.id} className="pos-price-row">
+                    <span>{f.label}</span>
+                    <span>{formatCurrency(f.amount)}</span>
+                  </div>
+                ))}
+                {/* Dịch vụ đăng ký đã chọn */}
+                {dsDichVu.filter(s => dichVuChon.has(s.id)).map(s => (
+                  <div key={s.id} className="pos-price-row" style={{ color: '#6366f1' }}>
+                    <span>{s.name}</span>
+                    <span>{formatCurrency(s.price)}</span>
+                  </div>
+                ))}
                 {tongPhKien > 0 && (
                   <div className="pos-price-row pos-price-row-pk">
                     <span>

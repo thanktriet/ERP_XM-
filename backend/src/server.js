@@ -16,6 +16,7 @@ const uploadRoutes       = require('./routes/upload.routes');
 const accountingRoutes   = require('./routes/accounting.routes');
 const purchaseOrderRoutes = require('./routes/purchaseOrder.routes');
 const promotionsRoutes   = require('./routes/promotions.routes');
+const settingsRoutes     = require('./routes/settings.routes');
 const { errorHandler, notFoundHandler } = require('./middleware/error.middleware');
 
 const app = express();
@@ -64,6 +65,7 @@ app.use('/api/upload',          uploadRoutes);
 app.use('/api/accounting',      accountingRoutes);
 app.use('/api/purchase-orders', purchaseOrderRoutes);
 app.use('/api/promotions',      promotionsRoutes);
+app.use('/api/settings',        settingsRoutes);
 
 // 404 & Error handlers
 app.use(notFoundHandler);

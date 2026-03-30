@@ -310,3 +310,26 @@ export interface PromoStats {
   expiring_soon:  number;
   total_discount: number;
 }
+
+export interface FeeSetting {
+  id:         string;
+  key:        string;
+  label:      string;
+  amount:     number;
+  is_active:  boolean;
+  note?:      string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RegistrationService {
+  id:          string;
+  name:        string;
+  description?: string | null;
+  price:       number;
+  is_active:   boolean;
+  sort_order:  number;
+  created_at:  string;
+  updated_at:  string;
+}

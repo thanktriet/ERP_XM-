@@ -23,6 +23,7 @@ import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import PaymentPage from './pages/PaymentPage';
 import CashflowPage from './pages/CashflowPage';
+import SettingsPage from './pages/SettingsPage';
 
 const qc = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -69,6 +70,7 @@ export default function App() {
             <Route path="services" element={<WarrantyPage />} />
             <Route path="finance" element={<FinancePage />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="settings" element={<SettingsPage />} />
             {/* Module kế toán */}
             <Route path="payment/:orderId" element={<PaymentPage />} />
             <Route path="accounting/cashflow" element={<CashflowPage />} />

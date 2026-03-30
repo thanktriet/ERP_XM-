@@ -54,6 +54,7 @@ export default function Layout() {
       section: 'Quản trị',
       items: [
         { to: '/users', label: 'Nhân viên', icon: '👤' },
+        { to: '/settings', label: 'Cấu hình', icon: '⚙️' },
       ],
     }] : []),
   ];
