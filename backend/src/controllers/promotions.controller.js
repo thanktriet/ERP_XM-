@@ -243,6 +243,14 @@ const getActivePromos = async (req, res) => {
       );
     }
 
+    // Map flat fields của view → nested object gift_items để frontend dùng thống nhất
+    filtered = filtered.map(p => ({
+      ...p,
+      gift_items: p.gift_item_id
+        ? { id: p.gift_item_id, name: p.gift_item_name, code: p.gift_item_code, category: p.gift_item_category }
+        : null,
+    }));
+
     res.json({ data: filtered, total: filtered.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
