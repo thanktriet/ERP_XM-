@@ -5,18 +5,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import { formatCurrency, getInitials } from '../utils/helpers';
 import { useAuthStore } from '../store/authStore';
-import type { Customer, VehicleModel, InventoryVehicle, Accessory, CartAccessory } from '../types';
+import type { Customer, VehicleModel, InventoryVehicle, Accessory, CartAccessory, Promotion } from '../types';
 import toast from 'react-hot-toast';
 import './SalesNewPage.css';
 
 // ─── Types nội bộ ────────────────────────────────────────────────────────────
-interface KhuyenMai {
-  id: string;
-  ten: string;
-  loai: 'giam_gia' | 'qua_tang';
-  gia_tri: number; // âm = giảm tiền, dương = quà tặng (không trừ vào giá)
-  checked: boolean;
-}
 
 interface FormTraGop {
   ngan_hang: string;
@@ -34,11 +27,7 @@ interface FormKhachMoi {
 // ─── Hằng số ─────────────────────────────────────────────────────────────────
 const PHI_TRUOC_BA = 500_000;
 
-const KHUYEN_MAI_MAC_DINH: KhuyenMai[] = [
-  { id: 'km1', ten: 'Giảm giá khai trương 5%', loai: 'giam_gia', gia_tri: -1_000_000, checked: true },
-  { id: 'km2', ten: 'Mũ bảo hiểm chính hãng',  loai: 'qua_tang', gia_tri: 250_000,  checked: true },
-  { id: 'km3', ten: 'Áo mưa cao cấp',           loai: 'qua_tang', gia_tri: 150_000,  checked: true },
-];
+const KHUYEN_MAI_MAC_DINH: Promotion[] = [];
 
 const NGAY_HIEN_TAI = new Date().toISOString().split('T')[0];
 
@@ -89,15 +78,11 @@ export default function SalesNewPage() {
   const [tienKhach, setTienKhach]             = useState('');
 
   // ── Bước 4: Khuyến mãi ───────────────────────────────────────────────────
-  const [khuyenMai, setKhuyenMai]             = useState<KhuyenMai[]>(KHUYEN_MAI_MAC_DINH);
-  const [showAddKM, setShowAddKM]             = useState(false);
+  const [khuyenMai, setKhuyenMai]             = useState<Promotion[]>(KHUYEN_MAI_MAC_DINH);
 
   // ── Bước 2b: Phụ kiện bán kèm ─────────────────────────────────────────────
   const [gioPhKien, setGioPhKien]             = useState<CartAccessory[]>([]);
-  const [filterCatPK, setFilterCatPK]         = useState<string>('');  // '' = tất cả
-  const [newKMTen, setNewKMTen]               = useState('');
-  const [newKMGia, setNewKMGia]               = useState('');
-  const [newKMLoai, setNewKMLoai]             = useState<'giam_gia' | 'qua_tang'>('giam_gia');
+  const [filterCatPK, setFilterCatPK]         = useState<string>('');
 
   // ── Bước 5: Ghi chú & giao hàng ─────────────────────────────────────────
   const [ghiChu, setGhiChu]                   = useState('');
@@ -143,6 +128,25 @@ export default function SalesNewPage() {
     staleTime: 60_000,
   });
 
+  // Khuyến mãi đang hoạt động từ API
+  const { data: dsActivePromos } = useQuery<{ data: Promotion[] }>({
+    queryKey: ['active-promos', modelId],
+    queryFn: () =>
+      api.get('/promotions/active', {
+        params: { model_id: modelId || undefined },
+      }).then(r => r.data),
+    staleTime: 60_000,
+  });
+
+  // Cập nhật danh sách KM khi model thay đổi, giữ lại trạng thái checked
+  useEffect(() => {
+    const incoming = dsActivePromos?.data ?? [];
+    setKhuyenMai(prev => {
+      const checkedIds = new Set(prev.filter(k => k.is_active).map(k => k.id));
+      return incoming.map(p => ({ ...p, is_active: checkedIds.has(p.id) || true }));
+    });
+  }, [dsActivePromos]);
+
   // ─── Derived data ─────────────────────────────────────────────────────────
 
   const modelChon = useMemo(
@@ -175,10 +179,18 @@ export default function SalesNewPage() {
   const variantChon  = modelChon?.variants?.find(v => v.ten === phienBanChon);
   const giaNiemYet   = (modelChon?.price_sell ?? 0) + (variantChon?.gia_chen_them ?? 0);
 
-  const tongGiamGia = useMemo(
-    () => khuyenMai.filter(k => k.checked && k.loai === 'giam_gia').reduce((s, k) => s + k.gia_tri, 0),
-    [khuyenMai],
-  );
+  const tongGiamGia = useMemo(() => {
+    // Chỉ lấy KM loại percent/fixed đang được chọn (is_active = checked trong POS)
+    return -khuyenMai
+      .filter(k => k.is_active && (k.promo_type === 'percent' || k.promo_type === 'fixed'))
+      .reduce((s, k) => {
+        if (k.promo_type === 'percent') {
+          const giam = giaNiemYet * k.discount_percent / 100;
+          return s + (k.max_discount_cap ? Math.min(giam, k.max_discount_cap) : giam);
+        }
+        return s + k.discount_amount;
+      }, 0);
+  }, [khuyenMai, giaNiemYet]);
 
   const tongPhKien = useMemo(
     () => gioPhKien.reduce((sum, item) => sum + item.line_total, 0),
@@ -308,19 +320,8 @@ export default function SalesNewPage() {
   }, []);
 
   const toggleKM = useCallback((id: string) => {
-    setKhuyenMai(prev => prev.map(k => k.id === id ? { ...k, checked: !k.checked } : k));
+    setKhuyenMai(prev => prev.map(k => k.id === id ? { ...k, is_active: !k.is_active } : k));
   }, []);
-
-  const themKhuyenMai = useCallback(() => {
-    if (!newKMTen.trim()) { toast.error('Nhập tên khuyến mãi'); return; }
-    const giaTriRaw = parseInt(newKMGia.replace(/\D/g, '') || '0', 10);
-    const giaTriFinal = newKMLoai === 'giam_gia' ? -Math.abs(giaTriRaw) : giaTriRaw;
-    setKhuyenMai(prev => [...prev, {
-      id: `km-${Date.now()}`, ten: newKMTen, loai: newKMLoai, gia_tri: giaTriFinal, checked: true,
-    }]);
-    setNewKMTen(''); setNewKMGia(''); setShowAddKM(false);
-    toast.success('Đã thêm khuyến mãi');
-  }, [newKMTen, newKMGia, newKMLoai]);
 
   const validate = (): boolean => {
     if (!khachHang)   { toast.error('Vui lòng chọn khách hàng');      return false; }
@@ -505,48 +506,58 @@ export default function SalesNewPage() {
             <div className="pos-card-header">
               <span className="pos-step-badge">4</span>
               <span className="pos-card-title">Khuyến Mãi &amp; Quà Tặng</span>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowAddKM(v => !v)}>
-                {showAddKM ? '✕ Đóng' : '+ Thêm KM'}
-              </button>
+              {khuyenMai.length > 0 && (
+                <span className="badge badge-blue" style={{ fontSize: 11 }}>
+                  {khuyenMai.filter(k => k.is_active).length}/{khuyenMai.length} đã chọn
+                </span>
+              )}
             </div>
             <div className="pos-card-body">
 
-              {/* Form thêm KM nhanh */}
-              {showAddKM && (
-                <div className="pos-add-km-form">
-                  <input className="pos-input pos-input-sm" placeholder="Tên khuyến mãi" value={newKMTen} onChange={e => setNewKMTen(e.target.value)} />
-                  <div className="pos-add-km-row">
-                    <select className="pos-input pos-input-sm" value={newKMLoai} onChange={e => setNewKMLoai(e.target.value as any)}>
-                      <option value="giam_gia">Giảm tiền</option>
-                      <option value="qua_tang">Quà tặng</option>
-                    </select>
-                    <input className="pos-input pos-input-sm" placeholder="Giá trị (VNĐ)" value={newKMGia} onChange={e => setNewKMGia(e.target.value)} />
-                    <button className="btn btn-primary btn-sm" onClick={themKhuyenMai}>✓</button>
+              {khuyenMai.length === 0 ? (
+                <div className="pos-km-empty">
+                  {modelChon
+                    ? 'Không có chương trình khuyến mãi phù hợp'
+                    : 'Chọn mẫu xe để xem khuyến mãi áp dụng'}
+                </div>
+              ) : (<>
+                <div className="pos-km-header-row">
+                  <span style={{ flex: 1 }}>Tên chương trình</span>
+                  <span style={{ width: 90 }}>Loại</span>
+                  <span style={{ width: 120, textAlign: 'right' }}>Ưu đãi</span>
+                </div>
+                {khuyenMai.map(km => (
+                  <div key={km.id} className={`pos-km-row${km.is_active ? ' checked' : ''}`}>
+                    <input type="checkbox" className="pos-km-check"
+                      checked={km.is_active} onChange={() => toggleKM(km.id)} />
+                    <span className="pos-km-ten">
+                      {km.name}
+                      {km.min_order_amount > 0 && (
+                        <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>
+                          (đơn ≥ {km.min_order_amount.toLocaleString('vi-VN')} ₫)
+                        </span>
+                      )}
+                    </span>
+                    <span className={`badge pos-km-loai ${
+                      km.promo_type === 'percent' ? 'badge-blue'
+                      : km.promo_type === 'fixed'   ? 'badge-green'
+                      : 'badge-purple'
+                    }`}>
+                      {km.promo_type === 'percent' ? 'Giảm %'
+                        : km.promo_type === 'fixed' ? 'Giảm tiền'
+                        : km.promo_type === 'gift'  ? 'Quà tặng'
+                        : 'Combo'}
+                    </span>
+                    <span className="pos-km-gia text-danger">
+                      {km.promo_type === 'percent'
+                        ? `-${km.discount_percent}%`
+                        : km.promo_type === 'fixed'
+                        ? `-${km.discount_amount.toLocaleString('vi-VN')} ₫`
+                        : `🎁 ${km.gift_items?.name ?? 'Quà tặng'}`}
+                    </span>
                   </div>
-                </div>
-              )}
-
-              <div className="pos-km-header-row">
-                <span style={{ flex: 1 }}>Tên khuyến mãi</span>
-                <span style={{ width: 76 }}>Loại</span>
-                <span style={{ width: 110, textAlign: 'right' }}>Giá trị</span>
-              </div>
-              {khuyenMai.map(km => (
-                <div key={km.id} className={`pos-km-row${km.checked ? ' checked' : ''}`}>
-                  <input type="checkbox" className="pos-km-check" checked={km.checked} onChange={() => toggleKM(km.id)} />
-                  <span className="pos-km-ten">{km.ten}</span>
-                  <span className={`badge pos-km-loai ${km.loai === 'giam_gia' ? 'badge-blue' : 'badge-green'}`}>
-                    {km.loai === 'giam_gia' ? 'Giảm tiền' : 'Quà tặng'}
-                  </span>
-                  <span className={`pos-km-gia ${km.gia_tri < 0 ? 'text-danger' : 'text-success'}`}>
-                    {km.gia_tri < 0 ? '' : '+'}{formatCurrency(km.gia_tri)}
-                  </span>
-                </div>
-              ))}
-
-              {khuyenMai.every(k => !k.checked) && (
-                <div className="pos-km-empty">Chưa chọn khuyến mãi nào</div>
-              )}
+                ))}
+              </>)}
             </div>
           </div>
         </div>
