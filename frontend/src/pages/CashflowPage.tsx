@@ -120,7 +120,7 @@ export default function CashflowPage() {
         () => setTimeout(fetchData, 1000) // delay nhỏ để trigger DB cập nhật period_balances
       )
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase?.removeChannel(channel); };
   }, [fetchData]);
 
   // ---- Summary ----

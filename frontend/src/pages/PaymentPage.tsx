@@ -193,7 +193,7 @@ export default function PaymentPage() {
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { supabase?.removeChannel(channel); };
   }, [orderId, order?.branch_id]);
 
   // ---- Thu tiền mặt ----
