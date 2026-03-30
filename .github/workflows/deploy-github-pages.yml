@@ -37,7 +37,12 @@ jobs:
       - name: Cài đặt và build (base /ERP_XM-/)
         working-directory: frontend
         env:
-          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
+          VITE_API_BASE_URL:      ${{ secrets.VITE_API_BASE_URL }}
+          VITE_SUPABASE_URL:      ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_BANK_CODE:         ${{ secrets.VITE_BANK_CODE }}
+          VITE_BANK_ACCOUNT:      ${{ secrets.VITE_BANK_ACCOUNT }}
+          VITE_BANK_NAME:         ${{ secrets.VITE_BANK_NAME }}
         run: |
           npm ci
           npm run build:gh-pages
