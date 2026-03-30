@@ -259,7 +259,7 @@ export default function SalesNewPage() {
             : i
         );
       }
-      return [...prev, { accessory: pk, quantity: 1, unit_price: pk.price, line_total: pk.price }];
+      return [...prev, { accessory: pk, quantity: 1, unit_price: pk.price_sell, line_total: pk.price_sell }];
     });
     toast.success(`Đã thêm: ${pk.name}`, { duration: 1500, icon: '🎁' });
   }, []);
@@ -786,7 +786,7 @@ export default function SalesNewPage() {
                             </div>
                             <div className="pos-pk-info">
                               <span className="pos-pk-name">{pk.name}</span>
-                              <span className="pos-pk-price">{formatCurrency(pk.price)}</span>
+                              <span className="pos-pk-price">{formatCurrency(pk.price_sell)}</span>
                               <span className="pos-pk-unit">/{pk.unit}</span>
                             </div>
                           </button>

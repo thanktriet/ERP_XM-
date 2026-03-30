@@ -161,10 +161,17 @@ export interface Accessory {
   description?:       string;
   category:           AccessoryCategory;
   image_url?:         string;
-  price:              number;
+  price_sell:         number;   // giá bán (API trả về price_sell)
+  price_cost?:        number;   // giá nhập (tùy chọn)
+  /** @deprecated dùng price_sell */
+  price?:             number;
   unit:               string;
+  qty_in_stock:       number;
+  qty_minimum:        number;
+  brand?:             string;
+  supplier?:          string;
+  compatible_models?: string[] | null;
   is_active:          boolean;
-  compatible_models?: string[] | null; // null = tương thích tất cả xe
   created_at:         string;
   updated_at:         string;
 }
@@ -186,7 +193,7 @@ export interface SalesOrderAccessory {
   unit_price:   number;
   line_total:   number;
   created_at:   string;
-  accessories?: Pick<Accessory, 'id' | 'code' | 'name' | 'category' | 'image_url' | 'unit' | 'price'>;
+  accessories?: Pick<Accessory, 'id' | 'code' | 'name' | 'category' | 'image_url' | 'unit' | 'price_sell'>;
 }
 
 // ─── Đơn nhập hàng ────────────────────────────────────────────────────────────
