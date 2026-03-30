@@ -30,11 +30,11 @@ CREATE TABLE IF NOT EXISTS registration_services (
 -- ─── 3. Trigger updated_at ──────────────────────────────────────
 CREATE TRIGGER trg_fee_settings_updated_at
   BEFORE UPDATE ON fee_settings
-  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 CREATE TRIGGER trg_registration_services_updated_at
   BEFORE UPDATE ON registration_services
-  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ─── 4. Dữ liệu mặc định ────────────────────────────────────────
 INSERT INTO fee_settings (key, label, amount, sort_order) VALUES
