@@ -557,6 +557,36 @@ export default function SalesNewPage() {
                     </span>
                   </div>
                 ))}
+
+                {/* ── Danh sách quà tặng từ KM gift/combo đang chọn ── */}
+                {(() => {
+                  const dsQua = khuyenMai.filter(
+                    k => k.is_active && (k.promo_type === 'gift' || k.promo_type === 'combo') && k.gift_items,
+                  );
+                  if (!dsQua.length) return null;
+                  return (
+                    <div style={{ marginTop: 10, borderTop: '1px dashed #e2e8f0', paddingTop: 8 }}>
+                      <div style={{ fontSize: 12, color: '#718096', marginBottom: 6, fontWeight: 600 }}>
+                        🎁 Quà tặng kèm theo chương trình:
+                      </div>
+                      {dsQua.map(km => (
+                        <div key={km.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '5px 0', fontSize: 13,
+                        }}>
+                          <span style={{ color: '#805ad5', fontSize: 16 }}>🎁</span>
+                          <span style={{ flex: 1 }}>{km.gift_items!.name}</span>
+                          <span style={{
+                            background: '#f3e8ff', color: '#6b21a8',
+                            borderRadius: 6, padding: '1px 8px', fontSize: 12,
+                          }}>
+                            ×{km.gift_quantity} {km.gift_items?.category ? `(${km.gift_items.category})` : ''}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
               </>)}
             </div>
           </div>
@@ -955,12 +985,21 @@ export default function SalesNewPage() {
                 {tongPhKien > 0 && (
                   <div className="pos-price-row pos-price-row-pk">
                     <span>
-                      🎁 Phụ kiện
+                      Phụ kiện
                       <span className="pos-pk-price-count">({gioPhKien.length} loại)</span>
                     </span>
                     <span>{formatCurrency(tongPhKien)}</span>
                   </div>
                 )}
+                {/* Quà tặng từ KM gift/combo */}
+                {khuyenMai
+                  .filter(k => k.is_active && (k.promo_type === 'gift' || k.promo_type === 'combo') && k.gift_items)
+                  .map(km => (
+                    <div key={km.id} className="pos-price-row" style={{ color: '#6b21a8' }}>
+                      <span>🎁 {km.gift_items!.name} ×{km.gift_quantity}</span>
+                      <span style={{ fontSize: 12 }}>Tặng kèm</span>
+                    </div>
+                  ))}
                 <div className="pos-price-total-row">
                   <span>Tổng thanh toán</span>
                   <span className="pos-price-total">{formatCurrency(tongThanhToan)}</span>
