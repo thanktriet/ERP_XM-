@@ -40,15 +40,12 @@ type ErrAxios = { response?: { data?: { error?: string } } };
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const CATEGORIES: { value: string; label: string }[] = [
-  { value: 'tui_xe', label: 'Túi xe' },
-  { value: 'baga', label: 'Baga' },
-  { value: 'gio', label: 'Giỏ xe' },
-  { value: 'khoa', label: 'Khóa' },
-  { value: 'ao_mua', label: 'Áo mưa' },
-  { value: 'nen', label: 'Nón bảo hiểm' },
-  { value: 'den_phu', label: 'Đèn phụ' },
-  { value: 'op_xe', label: 'Ốp xe' },
-  { value: 'khac', label: 'Khác' },
+  { value: 'weather', label: '🌧️ Thời tiết (áo mưa, ...)' },
+  { value: 'luggage', label: '🎒 Hành lý (túi, baga, giỏ, ...)' },
+  { value: 'safety',  label: '🪖 Bảo hộ (nón, găng tay, ...)' },
+  { value: 'comfort', label: '💺 Tiện nghi (đệm, khóa, đèn, ...)' },
+  { value: 'decor',   label: '✨ Trang trí (ốp xe, tem, ...)' },
+  { value: 'other',   label: '📦 Khác' },
 ];
 
 const MOVEMENT_TYPE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
