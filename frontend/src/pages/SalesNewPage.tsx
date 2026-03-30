@@ -3,6 +3,9 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
+
+// ─── Type nội bộ POS: Promotion + trạng thái tick riêng ──────────────────────
+type PromoInPOS = import('../types').Promotion & { _checked: boolean };
 import { formatCurrency, getInitials } from '../utils/helpers';
 import { useAuthStore } from '../store/authStore';
 import type { Customer, VehicleModel, InventoryVehicle, Accessory, CartAccessory, Promotion } from '../types';
@@ -27,7 +30,7 @@ interface FormKhachMoi {
 // ─── Hằng số ─────────────────────────────────────────────────────────────────
 const PHI_TRUOC_BA = 500_000;
 
-const KHUYEN_MAI_MAC_DINH: Promotion[] = [];
+const KHUYEN_MAI_MAC_DINH: PromoInPOS[] = [];
 
 const NGAY_HIEN_TAI = new Date().toISOString().split('T')[0];
 
@@ -78,7 +81,7 @@ export default function SalesNewPage() {
   const [tienKhach, setTienKhach]             = useState('');
 
   // ── Bước 4: Khuyến mãi ───────────────────────────────────────────────────
-  const [khuyenMai, setKhuyenMai]             = useState<Promotion[]>(KHUYEN_MAI_MAC_DINH);
+  const [khuyenMai, setKhuyenMai]             = useState<PromoInPOS[]>(KHUYEN_MAI_MAC_DINH);
 
   // ── Bước 2b: Phụ kiện bán kèm ─────────────────────────────────────────────
   const [gioPhKien, setGioPhKien]             = useState<CartAccessory[]>([]);
@@ -129,7 +132,7 @@ export default function SalesNewPage() {
   });
 
   // Khuyến mãi đang hoạt động từ API
-  const { data: dsActivePromos } = useQuery<{ data: Promotion[] }>({
+  const { data: dsActivePromos } = useQuery<{ data: import('../types').Promotion[] }>({
     queryKey: ['active-promos', modelId],
     queryFn: () =>
       api.get('/promotions/active', {
@@ -138,12 +141,16 @@ export default function SalesNewPage() {
     staleTime: 60_000,
   });
 
-  // Cập nhật danh sách KM khi model thay đổi, giữ lại trạng thái checked
+  // Cập nhật danh sách KM khi model thay đổi, giữ lại trạng thái _checked
   useEffect(() => {
     const incoming = dsActivePromos?.data ?? [];
     setKhuyenMai(prev => {
-      const checkedIds = new Set(prev.filter(k => k.is_active).map(k => k.id));
-      return incoming.map(p => ({ ...p, is_active: checkedIds.has(p.id) || true }));
+      const checkedIds = new Set(prev.filter(k => k._checked).map(k => k.id));
+      // KM mới mặc định được tick; KM đã có giữ nguyên trạng thái
+      return incoming.map(p => ({
+        ...p,
+        _checked: checkedIds.size > 0 ? checkedIds.has(p.id) : true,
+      }));
     });
   }, [dsActivePromos]);
 
@@ -180,9 +187,8 @@ export default function SalesNewPage() {
   const giaNiemYet   = (modelChon?.price_sell ?? 0) + (variantChon?.gia_chen_them ?? 0);
 
   const tongGiamGia = useMemo(() => {
-    // Chỉ lấy KM loại percent/fixed đang được chọn (is_active = checked trong POS)
     return -khuyenMai
-      .filter(k => k.is_active && (k.promo_type === 'percent' || k.promo_type === 'fixed'))
+      .filter(k => k._checked && (k.promo_type === 'percent' || k.promo_type === 'fixed'))
       .reduce((s, k) => {
         if (k.promo_type === 'percent') {
           const giam = giaNiemYet * k.discount_percent / 100;
@@ -320,7 +326,7 @@ export default function SalesNewPage() {
   }, []);
 
   const toggleKM = useCallback((id: string) => {
-    setKhuyenMai(prev => prev.map(k => k.id === id ? { ...k, is_active: !k.is_active } : k));
+    setKhuyenMai(prev => prev.map(k => k.id === id ? { ...k, _checked: !k._checked } : k));
   }, []);
 
   const validate = (): boolean => {
@@ -508,7 +514,7 @@ export default function SalesNewPage() {
               <span className="pos-card-title">Khuyến Mãi &amp; Quà Tặng</span>
               {khuyenMai.length > 0 && (
                 <span className="badge badge-blue" style={{ fontSize: 11 }}>
-                  {khuyenMai.filter(k => k.is_active).length}/{khuyenMai.length} đã chọn
+                  {khuyenMai.filter(k => k._checked).length}/{khuyenMai.length} đã chọn
                 </span>
               )}
             </div>
@@ -527,9 +533,9 @@ export default function SalesNewPage() {
                   <span style={{ width: 120, textAlign: 'right' }}>Ưu đãi</span>
                 </div>
                 {khuyenMai.map(km => (
-                  <div key={km.id} className={`pos-km-row${km.is_active ? ' checked' : ''}`}>
+                  <div key={km.id} className={`pos-km-row${km._checked ? ' checked' : ''}`}>
                     <input type="checkbox" className="pos-km-check"
-                      checked={km.is_active} onChange={() => toggleKM(km.id)} />
+                      checked={km._checked} onChange={() => toggleKM(km.id)} />
                     <span className="pos-km-ten">
                       {km.name}
                       {km.min_order_amount > 0 && (
@@ -561,7 +567,7 @@ export default function SalesNewPage() {
                 {/* ── Danh sách quà tặng từ KM gift/combo đang chọn ── */}
                 {(() => {
                   const dsQua = khuyenMai.filter(
-                    k => k.is_active && (k.promo_type === 'gift' || k.promo_type === 'combo') && k.gift_items,
+                    k => k._checked && (k.promo_type === 'gift' || k.promo_type === 'combo') && k.gift_items,
                   );
                   if (!dsQua.length) return null;
                   return (
@@ -993,7 +999,7 @@ export default function SalesNewPage() {
                 )}
                 {/* Quà tặng từ KM gift/combo */}
                 {khuyenMai
-                  .filter(k => k.is_active && (k.promo_type === 'gift' || k.promo_type === 'combo') && k.gift_items)
+                  .filter(k => k._checked && (k.promo_type === 'gift' || k.promo_type === 'combo') && k.gift_items)
                   .map(km => (
                     <div key={km.id} className="pos-price-row" style={{ color: '#6b21a8' }}>
                       <span>🎁 {km.gift_items!.name} ×{km.gift_quantity}</span>
