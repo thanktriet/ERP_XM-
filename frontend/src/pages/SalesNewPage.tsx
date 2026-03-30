@@ -835,6 +835,9 @@ export default function SalesNewPage() {
                               <span className="pos-pk-name">{pk.name}</span>
                               <span className="pos-pk-price">{formatCurrency(pk.price_sell)}</span>
                               <span className="pos-pk-unit">/{pk.unit}</span>
+                              {!pk.compatible_models?.length && (
+                                <span style={{ fontSize: 10, color: '#059669', marginTop: 2 }}>Tất cả xe</span>
+                              )}
                             </div>
                           </button>
                         );

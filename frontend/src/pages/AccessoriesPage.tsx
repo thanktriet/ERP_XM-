@@ -94,6 +94,7 @@ export default function AccessoriesPage() {
   const emptyForm = {
     name: '', brand: '', category: '', unit: 'cái',
     qty_minimum: 5, supplier: '', price_cost: 0, price_sell: 0, note: '',
+    compatible_models: [] as string[],
   };
   const [form, setForm] = useState(emptyForm);
 
@@ -129,6 +130,14 @@ export default function AccessoriesPage() {
     },
     enabled: !!modalHistory,
   });
+
+  // Danh sách dòng xe để chọn compatible_models
+  const { data: dsModelData } = useQuery({
+    queryKey: ['vehicle-models-list'],
+    queryFn: () => api.get('/vehicles', { params: { limit: 200 } }).then(r => r.data),
+    staleTime: 300_000,
+  });
+  const dsModel: { id: string; model_name: string; brand: string }[] = dsModelData?.data ?? [];
 
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
@@ -220,6 +229,7 @@ export default function AccessoriesPage() {
       price_cost: acc.price_cost,
       price_sell: acc.price_sell,
       note: acc.note ?? '',
+      compatible_models: acc.compatible_models ?? [],
     });
     setModalEdit(acc);
   };
@@ -424,6 +434,18 @@ export default function AccessoriesPage() {
                         ) : (
                           <span style={{ color: '#9ca3af' }}>—</span>
                         )}
+                        {/* Dòng xe áp dụng */}
+                        <div style={{ marginTop: 4 }}>
+                          {!acc.compatible_models?.length ? (
+                            <span style={{ fontSize: 11, color: '#059669', background: '#d1fae5', padding: '1px 7px', borderRadius: 999 }}>
+                              Tất cả xe
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: '#6366f1', background: '#e0e7ff', padding: '1px 7px', borderRadius: 999 }}>
+                              {acc.compatible_models.length} dòng xe
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ textAlign: 'right' }}>
                         <span
@@ -631,6 +653,42 @@ export default function AccessoriesPage() {
                     }
                   />
                 </div>
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">
+                    Dòng xe áp dụng
+                    <span style={{ fontWeight: 400, color: '#888', marginLeft: 6 }}>
+                      (để trống = dùng cho tất cả xe)
+                    </span>
+                  </label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                    {dsModel.map(m => {
+                      const checked = form.compatible_models.includes(m.id);
+                      return (
+                        <label key={m.id} style={{
+                          display: 'flex', alignItems: 'center', gap: 5,
+                          padding: '4px 10px', borderRadius: 6, cursor: 'pointer',
+                          border: `1px solid ${checked ? '#3b82f6' : '#e2e8f0'}`,
+                          background: checked ? '#eff6ff' : '#fff',
+                          fontSize: 13,
+                        }}>
+                          <input type="checkbox" checked={checked} onChange={() => {
+                            setForm(prev => ({
+                              ...prev,
+                              compatible_models: checked
+                                ? prev.compatible_models.filter(id => id !== m.id)
+                                : [...prev.compatible_models, m.id],
+                            }));
+                          }} />
+                          {m.brand} {m.model_name}
+                        </label>
+                      );
+                    })}
+                    {dsModel.length === 0 && (
+                      <span style={{ color: '#888', fontSize: 13 }}>Chưa có dòng xe nào</span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                   <label className="form-label">Ghi chú</label>
                   <textarea

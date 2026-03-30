@@ -26,7 +26,7 @@ const getAccessories = async (req, res) => {
   try {
     const page  = Math.max(1, parseInt(req.query.page)  || 1);
     const limit = Math.min(200, parseInt(req.query.limit) || 50);
-    const { search, category, is_active } = req.query;
+    const { search, category, is_active, model_id } = req.query;
 
     let q = supabaseAdmin
       .from('accessories')
@@ -39,6 +39,11 @@ const getAccessories = async (req, res) => {
 
     if (category) q = q.eq('category', category);
     if (search)   q = q.or(`name.ilike.%${search}%,code.ilike.%${search}%,brand.ilike.%${search}%`);
+
+    // Lọc theo dòng xe: lấy phụ kiện của model_id đó HOẶC dùng cho tất cả xe (compatible_models = null/rỗng)
+    if (model_id) {
+      q = q.or(`compatible_models.is.null,compatible_models.eq.{},compatible_models.cs.{${model_id}}`);
+    }
 
     q = q.range((page - 1) * limit, page * limit - 1);
     const { data, count, error } = await q;
