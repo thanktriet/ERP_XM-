@@ -257,3 +257,56 @@ export interface StockMovement {
   created_at: string;
   users?: { full_name: string };
 }
+
+
+// ─── Khuyến Mãi ───────────────────────────────────────────────────────────────
+export type PromoType = 'percent' | 'fixed' | 'gift' | 'combo';
+
+export interface Promotion {
+  id:                 string;
+  promo_code:         string;
+  name:               string;
+  description?:       string;
+  promo_type:         PromoType;
+  discount_percent:   number;
+  discount_amount:    number;
+  min_order_amount:   number;
+  max_discount_cap?:  number | null;
+  valid_from:         string;
+  valid_until:        string;
+  is_active:          boolean;
+  usage_limit?:       number | null;
+  usage_count:        number;
+  applicable_models?: string[] | null;
+  applicable_brands?: string[] | null;
+  gift_item_id?:      string | null;
+  gift_quantity:      number;
+  note?:              string;
+  created_by?:        string;
+  created_at:         string;
+  updated_at:         string;
+  gift_items?:        { id: string; code: string; name: string; category: string; qty_in_stock: number } | null;
+  users?:             { full_name: string } | null;
+  usage_history?:     PromoUsage[];
+}
+
+export interface PromoUsage {
+  id:               string;
+  promo_id:         string;
+  order_id:         string;
+  customer_id?:     string | null;
+  discount_applied: number;
+  note?:            string;
+  applied_by?:      string;
+  created_at:       string;
+  promotions?:      { promo_code: string; name: string; promo_type: PromoType };
+  sales_orders?:    { order_number: string; order_date: string; total_amount: number };
+  customers?:       { full_name: string; customer_code: string; phone: string };
+}
+
+export interface PromoStats {
+  total:          number;
+  active:         number;
+  expiring_soon:  number;
+  total_discount: number;
+}

@@ -30,6 +30,7 @@ export default function Layout() {
         { to: '/spare-parts', label: 'Phụ tùng', icon: '🔩' },
         { to: '/accessories', label: 'Phụ kiện', icon: '🎒' },
         { to: '/gifts', label: 'Quà tặng', icon: '🎁' },
+        { to: '/promotions', label: 'Khuyến mãi', icon: '🎉' },
         { to: '/purchase-orders', label: 'Đơn nhập hàng', icon: '📋' },
         { to: '/suppliers', label: 'Nhà cung cấp', icon: '🏭' },
       ],

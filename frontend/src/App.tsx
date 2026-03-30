@@ -18,6 +18,7 @@ import UsersPage from './pages/UsersPage';
 import SparePartsPage from './pages/SparePartsPage';
 import AccessoriesPage from './pages/AccessoriesPage';
 import GiftsPage from './pages/GiftsPage';
+import PromotionsPage from './pages/PromotionsPage';
 import PurchaseOrdersPage from './pages/PurchaseOrdersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import PaymentPage from './pages/PaymentPage';
@@ -61,6 +62,7 @@ export default function App() {
             <Route path="spare-parts" element={<SparePartsPage />} />
             <Route path="accessories" element={<AccessoriesPage />} />
             <Route path="gifts" element={<GiftsPage />} />
+            <Route path="promotions" element={<PromotionsPage />} />
             <Route path="purchase-orders" element={<PurchaseOrdersPage />} />
             <Route path="suppliers" element={<SuppliersPage />} />
             <Route path="warranty" element={<WarrantyPage />} />
