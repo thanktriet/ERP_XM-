@@ -35,13 +35,17 @@ const EMPTY_FORM: FormData = {
 // ─── Thanh tiến trình ─────────────────────────────────────────────────────────
 function StatusProgressBar({ currentStatus }: { currentStatus: string }) {
   const isCancelled = currentStatus === 'cancelled';
-  const currentIdx  = ORDER_STATUS_STEPS.indexOf(currentStatus as any);
+  // Bỏ invoice_approved khỏi thanh hiển thị — là bước trung gian tự động
+  const DISPLAY_STEPS = ORDER_STATUS_STEPS.filter(s => s !== 'invoice_approved');
+  // Nếu đang ở invoice_approved thì coi như đang ở invoice_requested (vừa duyệt xong)
+  const displayStatus = currentStatus === 'invoice_approved' ? 'invoice_requested' : currentStatus;
+  const currentIdx  = DISPLAY_STEPS.indexOf(displayStatus as any);
 
   return (
     <div className="order-progress-bar">
-      {ORDER_STATUS_STEPS.map((step, idx) => {
+      {DISPLAY_STEPS.map((step, idx) => {
         const isDone    = !isCancelled && idx < currentIdx;
-        const isActive  = !isCancelled && currentStatus === step;
+        const isActive  = !isCancelled && displayStatus === step;
         const isPending = !isCancelled && idx > currentIdx;
         return (
           <div
@@ -54,7 +58,7 @@ function StatusProgressBar({ currentStatus }: { currentStatus: string }) {
             <div className="order-progress-label">
               {ORDER_STATUS[step]?.label ?? step}
             </div>
-            {idx < ORDER_STATUS_STEPS.length - 1 && (
+            {idx < DISPLAY_STEPS.length - 1 && (
               <div className={`order-progress-line${isDone ? ' done' : ''}`} />
             )}
           </div>
@@ -724,9 +728,14 @@ export default function SalesPage() {
                     {activeForm === 'cancel' && (
                       <div className="order-subform order-subform-danger">
                         <p className="order-subform-title">❌ Huỷ đơn hàng #{detail.order_number}</p>
+                        {['deposit_paid'].includes(detail.status) && (
+                          <div className="order-subform-warning">
+                            ⚠️ Đơn hàng đã đặt cọc {formatCurrency(detail.deposit_amount ?? 0)}. Sẽ tự động tạo phiếu hoàn tiền cọc khi huỷ.
+                          </div>
+                        )}
                         {['full_paid', 'invoice_requested', 'invoice_approved', 'pdi_pending', 'pdi_done'].includes(detail.status) && (
                           <div className="order-subform-warning">
-                            ⚠️ Đơn hàng đã thu tiền. Cần xử lý hoàn tiền thủ công trước khi huỷ.
+                            ⚠️ Đơn hàng đã thu đủ tiền {formatCurrency(detail.total_amount ?? 0)}. Sẽ tự động tạo phiếu hoàn tiền khi huỷ.
                           </div>
                         )}
                         <div className="form-group">

@@ -30,10 +30,10 @@ export const ORDER_STATUS: Record<string, { label: string; cls: string }> = {
   cancelled:          { label: 'Đã huỷ',         cls: 'badge-red'    },
 };
 
-// Các bước hiển thị trên thanh tiến trình (bỏ invoice_approved vì tự động)
+// Các bước hiển thị trên thanh tiến trình
 export const ORDER_STATUS_STEPS = [
   'draft', 'confirmed', 'deposit_paid', 'full_paid',
-  'invoice_requested', 'pdi_pending', 'pdi_done', 'delivered',
+  'invoice_requested', 'invoice_approved', 'pdi_pending', 'pdi_done', 'delivered',
 ] as const;
 
 // ─── ActionDef ────────────────────────────────────────────────────────────────
@@ -60,39 +60,46 @@ export function getAllowedActions(currentStatus: string, userRole: string): Acti
 
   switch (currentStatus) {
     case 'draft':
-      if (isSales || canManage)       add('confirmed',   '✅ Xác nhận đơn',       'primary', null);
-      if (isSales || canManage)       add('cancelled',   '❌ Huỷ đơn',            'danger',  'cancel');
+      if (isSales || canManage)       add('confirmed',   '✅ Xác nhận đơn',          'primary', null);
+      if (isSales || canManage)       add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
       break;
 
     case 'confirmed':
-      if (isSales || isAcct)          add('deposit_paid','💰 Ghi nhận đặt cọc',   'warning', 'deposit');
-      if (isAcct || canManage)        add('full_paid',   '💳 Thu đủ tiền',         'primary', 'payment');
-      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',            'danger',  'cancel');
+      if (isSales || isAcct || canManage) add('deposit_paid','💰 Ghi nhận đặt cọc', 'warning', 'deposit');
+      if (isAcct || canManage)        add('full_paid',   '💳 Thu đủ tiền',            'primary', 'payment');
+      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
       break;
 
     case 'deposit_paid':
-      if (isAcct || canManage)        add('full_paid',   '💳 Thu đủ tiền',         'primary', 'payment');
-      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',            'danger',  'cancel');
+      if (isAcct || canManage)        add('full_paid',   '💳 Thu đủ tiền',            'primary', 'payment');
+      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
       break;
 
     case 'full_paid':
       if (isSales || canManage)       add('invoice_requested', '📄 Đề nghị xuất HĐ', 'primary', null);
-      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',            'danger',  'cancel');
+      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
       break;
 
     case 'invoice_requested':
       if (canManage)                  add('invoice_approved', '✅ Duyệt & chuyển PDI', 'primary', null);
-      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',            'danger',  'cancel');
+      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
+      break;
+
+    case 'invoice_approved':
+      // Trạng thái trung gian — backend tự chuyển sang pdi_pending
+      // Nếu kẹt ở đây, manager/admin có thể đẩy thủ công
+      if (canManage)                  add('pdi_pending', '🔄 Chuyển sang chờ PDI',   'primary', null);
+      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
       break;
 
     case 'pdi_pending':
-      if (isTech)                     add('pdi_done',    '🔧 Xác nhận PDI hoàn tất', 'primary', 'pdi');
-      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',            'danger',  'cancel');
+      if (isTech || canManage)        add('pdi_done',    '🔧 Xác nhận PDI hoàn tất', 'primary', 'pdi');
+      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
       break;
 
     case 'pdi_done':
-      if (isSales || canManage)       add('delivered',   '🏍️ Giao xe',            'primary', null);
-      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',            'danger',  'cancel');
+      if (isSales || canManage)       add('delivered',   '🏍️ Giao xe',               'primary', null);
+      if (canManage)                  add('cancelled',   '❌ Huỷ đơn',               'danger',  'cancel');
       break;
 
     // delivered & cancelled: không có hành động

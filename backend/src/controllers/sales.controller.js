@@ -10,23 +10,24 @@ const VALID_TRANSITIONS = {
   deposit_paid:       ['full_paid', 'cancelled'],
   full_paid:          ['invoice_requested', 'cancelled'],
   invoice_requested:  ['invoice_approved', 'cancelled'],
-  invoice_approved:   [], // trạng thái trung gian, tự động chuyển sang pdi_pending
+  invoice_approved:   ['pdi_pending'],          // fix: tự động nhưng phải khai báo hợp lệ
   pdi_pending:        ['pdi_done', 'cancelled'],
   pdi_done:           ['delivered', 'cancelled'],
-  delivered:          [], // trạng thái cuối
-  cancelled:          [], // trạng thái cuối
+  delivered:          [],
+  cancelled:          [],
 };
 
 // Quyền theo khoá "fromStatus→toStatus"
 const TRANSITION_ROLES = {
   'draft→confirmed':                    ['sales', 'manager', 'admin'],
-  'confirmed→deposit_paid':             ['sales', 'accountant'],
-  'deposit_paid→deposit_paid':          ['sales', 'accountant'],   // cọc thêm
+  'confirmed→deposit_paid':             ['sales', 'accountant', 'manager', 'admin'],
+  'deposit_paid→deposit_paid':          ['sales', 'accountant', 'manager', 'admin'],
   'confirmed→full_paid':                ['accountant', 'manager', 'admin'],
   'deposit_paid→full_paid':             ['accountant', 'manager', 'admin'],
   'full_paid→invoice_requested':        ['sales', 'manager', 'admin'],
   'invoice_requested→invoice_approved': ['manager', 'admin'],
-  'pdi_pending→pdi_done':               ['technician'],
+  'invoice_approved→pdi_pending':       ['manager', 'admin'],  // fix: tự động nhưng cần khai báo
+  'pdi_pending→pdi_done':               ['technician', 'manager', 'admin'],
   'pdi_done→delivered':                 ['sales', 'manager', 'admin'],
 };
 // cancelled: mọi trạng thái (trừ delivered) → admin + manager
@@ -199,11 +200,9 @@ async function handleDeliver(orderId, existingDeliveryDate) {
   return order;
 }
 
-async function handleCancel(orderId, cancel_reason, currentStatus) {
-  // Cảnh báo log nếu huỷ đơn đã thu tiền
-  if (['full_paid', 'invoice_requested', 'invoice_approved', 'pdi_pending', 'pdi_done'].includes(currentStatus)) {
-    console.warn(`⚠️ Huỷ đơn ${orderId} ở trạng thái ${currentStatus} — cần kiểm tra hoàn tiền thủ công`);
-  }
+async function handleCancel(orderId, cancel_reason, order) {
+  const currentStatus = order.status;
+
   const { data, error } = await supabaseAdmin
     .from('sales_orders')
     .update({ status: 'cancelled', cancel_reason })
@@ -211,6 +210,40 @@ async function handleCancel(orderId, cancel_reason, currentStatus) {
     .select()
     .single();
   if (error) throw new Error(error.message);
+
+  // Tạo giao dịch hoàn tiền nếu đơn đã thu tiền
+  const paidStatuses = ['full_paid', 'invoice_requested', 'invoice_approved', 'pdi_pending', 'pdi_done'];
+  if (paidStatuses.includes(currentStatus) && (order.total_amount ?? 0) > 0) {
+    const refundNum = `HOAN-${order.order_number}`;
+    await supabaseAdmin.from('finance_transactions').insert([{
+      transaction_number: refundNum,
+      type:               'expense',
+      category:           'hoan_tien',
+      amount:             order.total_amount,
+      payment_method:     order.payment_method || 'cash',
+      reference_id:       orderId,
+      reference_type:     'sales_order',
+      description:        `Hoàn tiền huỷ đơn ${order.order_number} — lý do: ${cancel_reason}`,
+      transaction_date:   new Date().toISOString().split('T')[0],
+    }]);
+  }
+
+  // Hoàn tiền cọc (nếu đơn chỉ ở deposit_paid)
+  if (currentStatus === 'deposit_paid' && (order.deposit_amount ?? 0) > 0) {
+    const refundNum = `HOAN-COC-${order.order_number}`;
+    await supabaseAdmin.from('finance_transactions').insert([{
+      transaction_number: refundNum,
+      type:               'expense',
+      category:           'hoan_tien',
+      amount:             order.deposit_amount,
+      payment_method:     order.payment_method || 'cash',
+      reference_id:       orderId,
+      reference_type:     'sales_order',
+      description:        `Hoàn tiền cọc huỷ đơn ${order.order_number} — lý do: ${cancel_reason}`,
+      transaction_date:   new Date().toISOString().split('T')[0],
+    }]);
+  }
+
   return data;
 }
 
@@ -477,10 +510,10 @@ const updateOrderStatus = async (req, res) => {
         break;
 
       case 'pdi_done':
-        if (!extraFields.pdi_notes) {
-          return res.status(400).json({ error: 'Thiếu ghi chú PDI' });
+        if (!extraFields.pdi_notes?.trim() || extraFields.pdi_notes.trim().length < 5) {
+          return res.status(400).json({ error: 'Ghi chú PDI tối thiểu 5 ký tự' });
         }
-        result = await handlePdiDone(id, extraFields.pdi_notes, req.user?.sub);
+        result = await handlePdiDone(id, extraFields.pdi_notes.trim(), req.user?.sub);
         break;
 
       case 'delivered':
@@ -488,10 +521,10 @@ const updateOrderStatus = async (req, res) => {
         break;
 
       case 'cancelled':
-        if (!extraFields.cancel_reason) {
+        if (!extraFields.cancel_reason?.trim()) {
           return res.status(400).json({ error: 'Thiếu lý do huỷ đơn' });
         }
-        result = await handleCancel(id, extraFields.cancel_reason, fromStatus);
+        result = await handleCancel(id, extraFields.cancel_reason.trim(), order);
         // Trả xe về kho nếu chưa giao
         {
           const { data: items } = await supabaseAdmin
